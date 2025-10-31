@@ -1,113 +1,61 @@
 // src/elligator2-curve25519.ts
 
+import { Field } from "@noble/curves/abstract/modular.js";
 import { decodeUCoordinate, encodeUCoordinate } from "./rfc7748";
 
 // параметры Curve25519
-const P: bigint = (1n << 255n) - 19n; // q
+const P: bigint = (1n << 255n) - 19n; // модуль поля
 const A_CURVE: bigint = 486662n;
 const B_CURVE: bigint = 1n;
-const Z_NON_SQUARE: bigint = 2n; // из аппендикса: Z = 2 для Curve25519
+const Z_NON_SQUARE: bigint = 2n; // несохраняемый элемент, Z = 2 для Curve25519
 const FIELD_BITS = 255;
 
-// (a mod p) с нормализацией в [0, p)
-function mod(a: bigint, p: bigint): bigint {
-	const r = a % p;
-	return r >= 0 ? r : r + p;
-}
+// создаём арифметику над полем GF(P)
+const Fp = Field(P);
 
-function modAdd(a: bigint, b: bigint, p: bigint): bigint {
-	return mod(a + b, p);
-}
-
-function modMul(a: bigint, b: bigint, p: bigint): bigint {
-	return mod(a * b, p);
-}
-
-// возведение в степень по модулю
-function modPow(base: bigint, exp: bigint, p: bigint): bigint {
-	let result = 1n;
-	let b = mod(base, p);
-	let e = exp;
-	while (e > 0) {
-		if (e & 1n) {
-			result = mod(result * b, p);
-		}
-		b = mod(b * b, p);
-		e >>= 1n;
-	}
-	return result;
-}
-
-// обратный элемент: a^{-1} mod p
-function modInv(a: bigint, p: bigint): bigint {
-	// расширенный евклид
-	let t = 0n;
-	let newT = 1n;
-	let r = p;
-	let newR = mod(a, p);
-
-	while (newR !== 0n) {
-		const q = r / newR;
-
-		const tmpT = newT;
-		newT = t - q * newT;
-		t = tmpT;
-
-		const tmpR = newR;
-		newR = r - q * newR;
-		r = tmpR;
-	}
-
-	if (r > 1n) {
-		throw new Error("modInv: not invertible");
-	}
-	if (t < 0n) {
-		t = t + p;
-	}
-	return t;
-}
-
-// Elligator2 for Curve25519, по псевдокоду из A.5
-// r — элемент поля (у нас это bigint)
+/**
+ * Реализация Elligator‑2 для Curve25519.
+ * Вход: r — элемент поля в виде bigint.
+ * Выход: u‑координата точки на кривой в формате Uint8Array (32 байта).
+ */
 export function elligator2Curve25519(r: bigint): Uint8Array {
-	const q = P;
-	const A = A_CURVE;
-	const B = B_CURVE;
-	const z = Z_NON_SQUARE;
+	// r^2
+	const r2 = Fp.mul(r, r);
+	// denom = 1 + z * r^2
+	const denom = Fp.add(1n, Fp.mul(Z_NON_SQUARE, r2));
+	// denomInv = (1 + z * r^2)^−1
+	const denomInv = Fp.inv(denom);
 
-	// v = - A / (1 + z * r^2)
-	const r2 = modMul(r, r, q);
-	const denom = modAdd(1n, modMul(z, r2, q), q); // 1 + z*r^2
-	const denomInv = modInv(denom, q);
-	const v = mod(-A * denomInv, q);
+	// v = −A / (1 + z*r^2)
+	const v = Fp.neg(Fp.mul(A_CURVE, denomInv));
 
-	// epsilon = (v^3 + A*v^2 + B*v) ^ ((q-1)/2)
-	const v2 = modMul(v, v, q);
-	const v3 = modMul(v2, v, q);
+	// v^2, v^3
+	const v2 = Fp.mul(v, v);
+	const v3 = Fp.mul(v2, v);
+	// term = v^3 + A*v^2 + B*v  (Weierstrass RHS)
+	const term = Fp.add(Fp.add(v3, Fp.mul(A_CURVE, v2)), Fp.mul(B_CURVE, v));
 
-	const term = modAdd(modAdd(v3, modMul(A, v2, q), q), modMul(B, v, q), q);
+	// epsilon = term^((p−1)/2) (Legendre символ: 1 или p−1)
+	const legendreExp = (P - 1n) >> 1n;
+	const epsilon = Fp.pow(term, legendreExp);
 
-	const legendreExp = (q - 1n) >> 1n;
-	const epsilon = modPow(term, legendreExp, q); // будет 1 или q-1
+	// A/2: делим коэффициент A на 2 в поле
+	const A_half = Fp.div(A_CURVE, 2n);
 
-	// x = epsilon * v - (1 - epsilon) * A/2
-	// посчитаем A/2
-	const inv2 = modInv(2n, q); // (q+1)/2
-	const A_half = modMul(A, inv2, q);
+	// x = epsilon * v − (1 − epsilon) * (A/2)
+	const epsV = Fp.mul(epsilon, v);
+	const oneMinusEps = Fp.sub(1n, epsilon);
+	const part = Fp.mul(oneMinusEps, A_half);
+	const x = Fp.sub(epsV, part);
 
-	const oneMinusEps = mod(1n - epsilon, q);
-	// eps * v
-	const epsV = modMul(epsilon, v, q);
-	// (1 - eps) * A/2
-	const part = modMul(oneMinusEps, A_half, q);
-
-	const x = mod(epsV - part, q);
-
-	// encoded u-coordinate
+	// сериализуем u‑координату в 32‑байтовый массив (младший разряд влево)
 	return encodeUCoordinate(x, FIELD_BITS);
 }
 
-// обёртка под нашу группу: вход u (32 байта) -> u as FE -> elligator2 -> 32 байта
+/**
+ * Обёртка для перехода от закодированной u‑координаты к точке на кривой через Elligator‑2.
+ * Вход: u (32 байта) → поле → Elligator‑2 → 32‑байтовая u‑координата.
+ */
 export function mapToCurveElligator2(u: Uint8Array): Uint8Array {
 	const r = decodeUCoordinate(u, FIELD_BITS);
 	return elligator2Curve25519(r);

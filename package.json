@@ -39,5 +39,8 @@
 		"test:unit": "vitest run --project unit",
 		"test:int": "vitest run --project integration",
 		"preflight": "./.husky/pre-push"
+	},
+	"dependencies": {
+		"@noble/curves": "^2.0.1"
 	}
 }
