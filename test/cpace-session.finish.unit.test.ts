@@ -104,4 +104,13 @@ describe("CPaceSession.finish invalid peer handling", () => {
 		expect(isk.length).toBeGreaterThan(0);
 		expect(session.sidOutput).toBeDefined();
 	});
+
+	it("throws a descriptive error when finish is invoked before start", async () => {
+		const group = createMockGroup(async () => new Uint8Array(32).fill(2));
+		const session = createSessionWithGroup(group);
+
+		await expect(
+			session.receive({ type: "msg", payload: new Uint8Array(32) }),
+		).rejects.toThrow("CPaceSession.finish: session not started");
+	});
 });

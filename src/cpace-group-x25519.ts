@@ -96,9 +96,9 @@ export class X25519Group implements GroupEnv {
 		point: Uint8Array,
 	): Promise<Uint8Array> {
 		const u = point.slice();
-		if (u.length === 0) {
+		if (u.length !== this.fieldSizeBytes) {
 			throw new LowOrderPointError(
-				"X25519Group.scalarMultVfy: invalid point length (zero)",
+				`X25519Group.scalarMultVfy: invalid point length (expected ${this.fieldSizeBytes} bytes, got ${u.length})`,
 			);
 		}
 		// RFC 7748 §5: inputs are interpreted modulo p with the unused MSB cleared.
@@ -106,7 +106,7 @@ export class X25519Group implements GroupEnv {
 		const inputLastByte = u[inputLastIndex];
 		if (inputLastByte === undefined) {
 			throw new LowOrderPointError(
-				"X25519Group.scalarMultVfy: invalid point length",
+				"X25519Group.scalarMultVfy: invalid point length (missing last byte)",
 			);
 		}
 		u[inputLastIndex] = inputLastByte & 0x7f;
@@ -129,16 +129,16 @@ export class X25519Group implements GroupEnv {
 
 		// RFC 7748 §5: clear the unused most significant bit before returning.
 		const masked = r.slice();
-		if (masked.length === 0) {
+		if (masked.length !== this.fieldSizeBytes) {
 			throw new LowOrderPointError(
-				"X25519Group.scalarMultVfy: invalid shared secret length (zero)",
+				`X25519Group.scalarMultVfy: invalid shared secret length (expected ${this.fieldSizeBytes} bytes, got ${masked.length})`,
 			);
 		}
 		const outputLastIndex = masked.length - 1;
 		const outputLastByte = masked[outputLastIndex];
 		if (outputLastByte === undefined) {
 			throw new LowOrderPointError(
-				"X25519Group.scalarMultVfy: invalid shared secret length",
+				"X25519Group.scalarMultVfy: invalid shared secret length (missing last byte)",
 			);
 		}
 		masked[outputLastIndex] = outputLastByte & 0x7f;
@@ -148,14 +148,18 @@ export class X25519Group implements GroupEnv {
 
 	serialize(point: Uint8Array): Uint8Array {
 		if (point.length !== this.fieldSizeBytes) {
-			throw new Error("X25519Group.serialize: bad length");
+			throw new Error(
+				`X25519Group.serialize: expected ${this.fieldSizeBytes} bytes, got ${point.length}`,
+			);
 		}
 		return point.slice();
 	}
 
 	deserialize(buf: Uint8Array): Uint8Array {
 		if (buf.length !== this.fieldSizeBytes) {
-			throw new Error("X25519Group.deserialize: bad length");
+			throw new Error(
+				`X25519Group.deserialize: expected ${this.fieldSizeBytes} bytes, got ${buf.length}`,
+			);
 		}
 		return buf.slice();
 	}

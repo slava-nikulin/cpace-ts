@@ -43,6 +43,25 @@ describe("CPace symmetric associated data", () => {
 	);
 
 	it.skipIf(!HAS_CRYPTO)(
+		"rejects configuration that specifies both ada and adb",
+		async () => {
+			const prs = utf8("sym-ad-both");
+			const session = new CPaceSession({
+				prs,
+				suite,
+				mode: "symmetric",
+				role: "symmetric",
+				ada: utf8("ada"),
+				adb: utf8("adb"),
+			});
+
+			await expect(session.start()).rejects.toThrow(
+				/CPaceSession\.start: symmetric mode accepts either ada or adb/,
+			);
+		},
+	);
+
+	it.skipIf(!HAS_CRYPTO)(
 		"matches ISK when one side uses ada and the other uses adb",
 		async () => {
 			const prs = utf8("sym-ad-mixed");
