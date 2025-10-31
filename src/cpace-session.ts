@@ -30,7 +30,10 @@ export type CPaceInputs = {
 };
 
 export class InvalidPeerElementError extends Error {
-	constructor(message = "CPaceSession.finish: invalid peer element", options?: ErrorOptions) {
+	constructor(
+		message = "CPaceSession.finish: invalid peer element",
+		options?: ErrorOptions,
+	) {
 		super(message, options);
 		this.name = "InvalidPeerElementError";
 	}

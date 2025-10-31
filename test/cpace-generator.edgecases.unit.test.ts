@@ -11,7 +11,7 @@ function leb128Decode(buf: Uint8Array, offset: number): [number, number] {
 	let shift = 0;
 	let cursor = offset;
 	while (cursor < buf.length) {
-		const byte = buf[cursor]!;
+		const byte = buf[cursor];
 		result |= (byte & 0x7f) << shift;
 		cursor += 1;
 		if ((byte & 0x80) === 0) {

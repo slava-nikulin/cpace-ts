@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { GroupEnv } from "../src/cpace-group-x25519";
 import {
-	CPaceSession,
-	InvalidPeerElementError,
 	type CPaceInputs,
+	CPaceSession,
 	type CPaceSuiteDesc,
+	InvalidPeerElementError,
 } from "../src/cpace-session";
 
 type ScalarMultVfyImpl = (

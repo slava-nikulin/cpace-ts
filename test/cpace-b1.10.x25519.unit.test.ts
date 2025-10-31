@@ -4,14 +4,7 @@ import { bytesToHex } from "../src/cpace-strings";
 
 import {
 	TC_LOW_S,
-	TC_Q0,
-	TC_Q1,
-	TC_Q2,
-	TC_Q3,
-	TC_Q4,
-	TC_Q5,
 	TC_Q6,
-	TC_Q7,
 	TC_Q8,
 	TC_Q9,
 	TC_QA,

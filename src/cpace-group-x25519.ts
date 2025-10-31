@@ -95,9 +95,25 @@ export class X25519Group implements GroupEnv {
 		scalar: Uint8Array,
 		point: Uint8Array,
 	): Promise<Uint8Array> {
+		const u = point.slice();
+		if (u.length === 0) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: invalid point length (zero)",
+			);
+		}
+		// RFC 7748 §5: inputs are interpreted modulo p with the unused MSB cleared.
+		const inputLastIndex = u.length - 1;
+		const inputLastByte = u[inputLastIndex];
+		if (inputLastByte === undefined) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: invalid point length",
+			);
+		}
+		u[inputLastIndex] = inputLastByte & 0x7f;
+
 		let r: Uint8Array;
 		try {
-			r = await x25519(scalar, point.slice());
+			r = await x25519(scalar, u);
 		} catch (err) {
 			throw new LowOrderPointError(
 				"X25519Group.scalarMultVfy: invalid point multiplication failed",
@@ -111,7 +127,23 @@ export class X25519Group implements GroupEnv {
 			);
 		}
 
-		return r;
+		// RFC 7748 §5: clear the unused most significant bit before returning.
+		const masked = r.slice();
+		if (masked.length === 0) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: invalid shared secret length (zero)",
+			);
+		}
+		const outputLastIndex = masked.length - 1;
+		const outputLastByte = masked[outputLastIndex];
+		if (outputLastByte === undefined) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: invalid shared secret length",
+			);
+		}
+		masked[outputLastIndex] = outputLastByte & 0x7f;
+
+		return masked;
 	}
 
 	serialize(point: Uint8Array): Uint8Array {
