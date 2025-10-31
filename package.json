@@ -34,6 +34,10 @@
 		"dev": "tsup --watch",
 		"prepublishOnly": "pnpm run build",
 		"lint:fix": "biome check --write --unsafe",
-		"typecheck": "tsc -b"
+		"lint": "biome check .",
+		"typecheck": "tsc -b",
+		"test:unit": "vitest run --project unit",
+		"test:int": "vitest run --project integration",
+		"preflight": "./.husky/pre-push"
 	}
 }
