@@ -47,13 +47,27 @@ async function x25519(
 	return x25519Webcrypto(scalar, point);
 }
 
+export type LowOrderPointReason =
+	| "length"
+	| "missing-last-byte"
+	| "multiply-failed"
+	| "low-order"
+	| "shared-secret-length";
+
+export interface LowOrderPointErrorOptions extends ErrorOptions {
+	reason?: LowOrderPointReason;
+}
+
 export class LowOrderPointError extends Error {
+	readonly reason: LowOrderPointReason;
+
 	constructor(
 		message = "X25519Group.scalarMultVfy: low-order or invalid point",
-		options?: ErrorOptions,
+		options?: LowOrderPointErrorOptions,
 	) {
 		super(message, options);
 		this.name = "LowOrderPointError";
+		this.reason = options?.reason ?? "low-order";
 	}
 }
 
@@ -99,6 +113,7 @@ export class X25519Group implements GroupEnv {
 		if (u.length !== this.fieldSizeBytes) {
 			throw new LowOrderPointError(
 				`X25519Group.scalarMultVfy: invalid point length (expected ${this.fieldSizeBytes} bytes, got ${u.length})`,
+				{ reason: "length" },
 			);
 		}
 		// RFC 7748 §5: inputs are interpreted modulo p with the unused MSB cleared.
@@ -107,6 +122,7 @@ export class X25519Group implements GroupEnv {
 		if (inputLastByte === undefined) {
 			throw new LowOrderPointError(
 				"X25519Group.scalarMultVfy: invalid point length (missing last byte)",
+				{ reason: "missing-last-byte" },
 			);
 		}
 		u[inputLastIndex] = inputLastByte & 0x7f;
@@ -117,13 +133,14 @@ export class X25519Group implements GroupEnv {
 		} catch (err) {
 			throw new LowOrderPointError(
 				"X25519Group.scalarMultVfy: invalid point multiplication failed",
-				{ cause: err },
+				{ cause: err, reason: "multiply-failed" },
 			);
 		}
 
 		if (compareBytes(r, this.I) === 0) {
 			throw new LowOrderPointError(
 				"X25519Group.scalarMultVfy: low-order result (all-zero shared secret)",
+				{ reason: "low-order" },
 			);
 		}
 
@@ -132,6 +149,7 @@ export class X25519Group implements GroupEnv {
 		if (masked.length !== this.fieldSizeBytes) {
 			throw new LowOrderPointError(
 				`X25519Group.scalarMultVfy: invalid shared secret length (expected ${this.fieldSizeBytes} bytes, got ${masked.length})`,
+				{ reason: "shared-secret-length" },
 			);
 		}
 		const outputLastIndex = masked.length - 1;
@@ -139,6 +157,7 @@ export class X25519Group implements GroupEnv {
 		if (outputLastByte === undefined) {
 			throw new LowOrderPointError(
 				"X25519Group.scalarMultVfy: invalid shared secret length (missing last byte)",
+				{ reason: "shared-secret-length" },
 			);
 		}
 		masked[outputLastIndex] = outputLastByte & 0x7f;

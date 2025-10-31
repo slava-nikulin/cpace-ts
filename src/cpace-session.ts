@@ -1,5 +1,9 @@
 import { compareBytes } from "./bytes";
-import type { GroupEnv } from "./cpace-group-x25519"; // или твой путь
+import {
+	type GroupEnv,
+	LowOrderPointError,
+	type LowOrderPointReason,
+} from "./cpace-group-x25519";
 import {
 	concat,
 	lvCat,
@@ -11,6 +15,12 @@ import type { HashFn } from "./hash";
 
 const MAX_INPUT_LENGTH = 0xffff;
 
+type EnsureBytesOptions = {
+	optional?: boolean;
+	minLength?: number;
+	maxLength?: number;
+};
+
 function ensureBytes(
 	name: string,
 	value: Uint8Array | undefined,
@@ -18,7 +28,7 @@ function ensureBytes(
 		optional = true,
 		minLength = 0,
 		maxLength = MAX_INPUT_LENGTH,
-	}: { optional?: boolean; minLength?: number; maxLength?: number } = {},
+	}: EnsureBytesOptions = {},
 ): Uint8Array {
 	if (value === undefined) {
 		if (!optional) {
@@ -43,7 +53,7 @@ function ensureBytes(
 export interface CPaceSuiteDesc {
 	name: string;
 	group: GroupEnv;
-	hash: HashFn; // теперь async
+	hash: HashFn;
 }
 
 export type CPaceMode = "initiator-responder" | "symmetric";
@@ -60,6 +70,21 @@ export type CPaceInputs = {
 	sid?: Uint8Array;
 };
 
+export type AuditLevel = "info" | "warn" | "error" | "security";
+
+export type AuditEvent = {
+	ts: string;
+	sessionId: string;
+	level: AuditLevel;
+	code: string;
+	message?: string;
+	data?: Record<string, unknown>;
+};
+
+export interface AuditLogger {
+	audit(event: AuditEvent): void | Promise<void>;
+}
+
 export class InvalidPeerElementError extends Error {
 	constructor(
 		message = "CPaceSession.finish: invalid peer element",
@@ -71,14 +96,33 @@ export class InvalidPeerElementError extends Error {
 }
 
 export class CPaceSession {
+	private readonly auditLogger: AuditLogger | undefined;
+	private readonly sessionId: string;
+	private readonly inps: CPaceInputs;
+
 	private ephemeralScalar?: Uint8Array;
 	private ourMsg?: Uint8Array;
 	private isk?: Uint8Array;
 	private sidValue?: Uint8Array;
 
-	constructor(private readonly inps: CPaceInputs) {}
+	constructor(
+		options: CPaceInputs & { audit?: AuditLogger; sessionId?: string },
+	) {
+		const { audit, sessionId, ...inps } = options;
+		this.auditLogger = audit;
+		this.sessionId = sessionId ?? generateSessionId();
+		this.inps = inps;
+		this.emitAudit("CPACE_SESSION_CREATED", "info", {
+			mode: inps.mode,
+			role: inps.role,
+			suite: inps.suite.name,
+			ci_len: inps.ci?.length ?? 0,
+			sid_len: inps.sid?.length ?? 0,
+			ada_len: inps.ada?.length ?? 0,
+			adb_len: inps.adb?.length ?? 0,
+		});
+	}
 
-	// Было sync → стало async
 	async start(): Promise<
 		| {
 				type: "msg";
@@ -90,23 +134,33 @@ export class CPaceSession {
 	> {
 		const { suite, prs, ci, sid, ada, adb, role, mode } = this.inps;
 
-		const normalizedPrs = ensureBytes("prs", prs, {
+		const normalizedPrs = this.ensureField("prs", prs, {
 			optional: false,
 			minLength: 1,
 		});
-		const normalizedCi = ci !== undefined ? ensureBytes("ci", ci) : undefined;
+		const normalizedCi =
+			ci !== undefined ? this.ensureField("ci", ci) : undefined;
 		const normalizedSid =
-			sid !== undefined ? ensureBytes("sid", sid) : undefined;
+			sid !== undefined ? this.ensureField("sid", sid) : undefined;
 		const normalizedAda =
-			ada !== undefined ? ensureBytes("ada", ada) : undefined;
+			ada !== undefined ? this.ensureField("ada", ada) : undefined;
 		const normalizedAdb =
-			adb !== undefined ? ensureBytes("adb", adb) : undefined;
+			adb !== undefined ? this.ensureField("adb", adb) : undefined;
 
 		if (mode === "symmetric" && normalizedAda && normalizedAdb) {
+			this.reportInputInvalid(
+				"ada/adb",
+				"symmetric mode accepts either ada or adb",
+				{
+					mode,
+				},
+			);
 			throw new Error(
 				"CPaceSession.start: symmetric mode accepts either ada or adb, not both",
 			);
 		}
+
+		this.emitAudit("CPACE_START_BEGIN", "info", { mode, role });
 
 		const pwdPoint = await suite.group.calculateGenerator(
 			suite.hash,
@@ -142,10 +196,16 @@ export class CPaceSession {
 		} else if (normalizedAda) {
 			result.ada = normalizedAda;
 		}
+
+		this.emitAudit("CPACE_START_SENT", "info", {
+			payload_len: result.payload.length,
+			ada_present: Boolean(result.ada && result.ada.length > 0),
+			adb_present: Boolean(result.adb && result.adb.length > 0),
+		});
+
 		return result;
 	}
 
-	// Было sync → стало async
 	async receive(msg: {
 		type: "msg";
 		payload: Uint8Array;
@@ -156,15 +216,16 @@ export class CPaceSession {
 	> {
 		const { prs, ci, sid, adb, role, mode, suite } = this.inps;
 
-		const normalizedPrs = ensureBytes("prs", prs, {
+		const normalizedPrs = this.ensureField("prs", prs, {
 			optional: false,
 			minLength: 1,
 		});
-		const normalizedCi = ci !== undefined ? ensureBytes("ci", ci) : undefined;
+		const normalizedCi =
+			ci !== undefined ? this.ensureField("ci", ci) : undefined;
 		const normalizedSid =
-			sid !== undefined ? ensureBytes("sid", sid) : undefined;
+			sid !== undefined ? this.ensureField("sid", sid) : undefined;
 		const normalizedSessionAdb =
-			adb !== undefined ? ensureBytes("adb", adb) : undefined;
+			adb !== undefined ? this.ensureField("adb", adb) : undefined;
 
 		if (!(msg.payload instanceof Uint8Array)) {
 			throw new InvalidPeerElementError(
@@ -173,6 +234,10 @@ export class CPaceSession {
 		}
 		const expectedPayloadLength = suite.group.fieldSizeBytes;
 		if (msg.payload.length !== expectedPayloadLength) {
+			this.reportInputInvalid("peer.payload", "invalid length", {
+				expected: expectedPayloadLength,
+				actual: msg.payload.length,
+			});
 			throw new InvalidPeerElementError(
 				`CPaceSession.receive: peer payload must be ${expectedPayloadLength} bytes`,
 			);
@@ -180,14 +245,22 @@ export class CPaceSession {
 		const payload = msg.payload;
 
 		if (msg.ada !== undefined && msg.adb !== undefined) {
+			this.reportInputInvalid(
+				"peer.ada/peer.adb",
+				"peer message must not include both ada and adb",
+			);
 			throw new Error(
 				"CPaceSession.receive: peer message must not include both ada and adb",
 			);
 		}
 		const hasPeerAda = msg.ada !== undefined;
 		const hasPeerAdb = msg.adb !== undefined;
-		const peerAda = hasPeerAda ? ensureBytes("peer ada", msg.ada) : undefined;
-		const peerAdb = hasPeerAdb ? ensureBytes("peer adb", msg.adb) : undefined;
+		const peerAda = hasPeerAda
+			? this.ensureField("peer ada", msg.ada)
+			: undefined;
+		const peerAdb = hasPeerAdb
+			? this.ensureField("peer adb", msg.adb)
+			: undefined;
 
 		if (
 			mode === "initiator-responder" &&
@@ -204,6 +277,17 @@ export class CPaceSession {
 		} = { payload };
 		if (hasPeerAda && peerAda) sanitizedPeerMsg.ada = peerAda;
 		if (hasPeerAdb && peerAdb) sanitizedPeerMsg.adb = peerAdb;
+
+		this.emitAudit("CPACE_RX_RECEIVED", "info", {
+			payload_len: payload.length,
+			ada_present: Boolean(
+				sanitizedPeerMsg.ada && sanitizedPeerMsg.ada.length > 0,
+			),
+			adb_present: Boolean(
+				sanitizedPeerMsg.adb && sanitizedPeerMsg.adb.length > 0,
+			),
+		});
+
 		this.isk = await this.finish(
 			normalizedPrs,
 			normalizedCi,
@@ -222,6 +306,11 @@ export class CPaceSession {
 			if (normalizedSessionAdb) {
 				response.adb = normalizedSessionAdb;
 			}
+			this.emitAudit("CPACE_START_SENT", "info", {
+				payload_len: response.payload.length,
+				ada_present: false,
+				adb_present: Boolean(response.adb && response.adb.length > 0),
+			});
 			return response;
 		}
 
@@ -237,7 +326,6 @@ export class CPaceSession {
 		return this.sidValue;
 	}
 
-	// Было sync → стало async
 	private async finish(
 		_prs: Uint8Array,
 		_ci: Uint8Array | undefined,
@@ -250,23 +338,47 @@ export class CPaceSession {
 
 		const { suite, mode, role, ada, adb } = this.inps;
 		const normalizedAda =
-			ada !== undefined ? ensureBytes("ada", ada) : undefined;
+			ada !== undefined ? this.ensureField("ada", ada) : undefined;
 		const normalizedAdb =
-			adb !== undefined ? ensureBytes("adb", adb) : undefined;
+			adb !== undefined ? this.ensureField("adb", adb) : undefined;
 
-		const peerPoint = suite.group.deserialize(peerMsg.payload);
+		this.emitAudit("CPACE_FINISH_BEGIN", "info", { mode, role });
+
+		let peerPoint: Uint8Array;
+		try {
+			peerPoint = suite.group.deserialize(peerMsg.payload);
+		} catch (err) {
+			this.emitAudit("CPACE_PEER_INVALID", "error", {
+				error: err instanceof Error ? (err.name ?? "Error") : "UnknownError",
+				message: err instanceof Error ? err.message : undefined,
+			});
+			throw new InvalidPeerElementError(undefined, {
+				cause: err instanceof Error ? err : undefined,
+			});
+		}
+
 		let k: Uint8Array;
 		try {
 			k = await suite.group.scalarMultVfy(this.ephemeralScalar, peerPoint);
 		} catch (err) {
-			throw new InvalidPeerElementError(undefined, { cause: err });
+			if (isLowOrderError(err, "low-order")) {
+				this.emitAudit("CPACE_LOW_ORDER_POINT", "security", {});
+			} else {
+				this.emitAudit("CPACE_PEER_INVALID", "error", {
+					error: err instanceof Error ? (err.name ?? "Error") : "UnknownError",
+					message: err instanceof Error ? err.message : undefined,
+				});
+			}
+			throw new InvalidPeerElementError(undefined, {
+				cause: err instanceof Error ? err : undefined,
+			});
 		}
 
 		if (compareBytes(k, suite.group.I) === 0) {
+			this.emitAudit("CPACE_LOW_ORDER_POINT", "security", {});
 			throw new InvalidPeerElementError();
 		}
 
-		// transcript
 		let transcript: Uint8Array;
 		if (mode === "initiator-responder") {
 			transcript =
@@ -284,8 +396,12 @@ export class CPaceSession {
 							normalizedAdb ?? new Uint8Array(0),
 						);
 		} else {
-			// симметричный режим: объединяем обе строки AD
 			if (normalizedAda && normalizedAdb) {
+				this.reportInputInvalid(
+					"ada/adb",
+					"symmetric mode expects a single associated data source",
+					{ mode },
+				);
 				throw new Error(
 					"CPaceSession.finish: symmetric mode expects a single associated data source",
 				);
@@ -293,12 +409,16 @@ export class CPaceSession {
 			const hasPeerAda = peerMsg.ada !== undefined;
 			const hasPeerAdb = peerMsg.adb !== undefined;
 			const peerAdaBytes = hasPeerAda
-				? ensureBytes("peer ada", peerMsg.ada)
+				? this.ensureField("peer ada", peerMsg.ada)
 				: undefined;
 			const peerAdbBytes = hasPeerAdb
-				? ensureBytes("peer adb", peerMsg.adb)
+				? this.ensureField("peer adb", peerMsg.adb)
 				: undefined;
 			if (peerAdaBytes && peerAdbBytes) {
+				this.reportInputInvalid(
+					"peer.ada/peer.adb",
+					"peer message must not include both ada and adb",
+				);
 				throw new Error(
 					"CPaceSession.finish: peer message must not include both ada and adb",
 				);
@@ -314,16 +434,12 @@ export class CPaceSession {
 			);
 		}
 
-		// ISK = H( lv_cat(G.DSI||"_ISK", sid, K) || transcript )
 		const dsiIsk = concat([suite.group.DSI, utf8("_ISK")]);
 		const sidBytes = sid ?? new Uint8Array(0);
 		const lvPart = lvCat(dsiIsk, sidBytes, k);
 		const keyMaterial = concat([lvPart, transcript]);
 		const isk = await suite.hash(keyMaterial);
 
-		// sidOutput:
-		// - если sid задан (не пуст): просто публикуем sid как есть
-		// - иначе: публикуем первые 16 байт H("CPaceSidOutput" || transcript)
 		if (sid && sid.length > 0) {
 			this.sidValue = sid.slice();
 		} else {
@@ -333,6 +449,116 @@ export class CPaceSession {
 			this.sidValue = sidOutFull.slice(0, 16);
 		}
 
+		this.emitAudit("CPACE_FINISH_OK", "info", {
+			transcript_type: mode === "initiator-responder" ? "ir" : "oc",
+			sid_provided: Boolean(sid && sid.length > 0),
+		});
+
 		return isk;
 	}
+
+	private ensureField(
+		field: string,
+		value: Uint8Array | undefined,
+		options?: EnsureBytesOptions,
+	): Uint8Array {
+		try {
+			return ensureBytes(field, value, options);
+		} catch (err) {
+			this.reportInputInvalid(
+				field,
+				err instanceof Error ? err.message : "validation failed",
+				{
+					expected: extractExpected(options),
+					actual:
+						value instanceof Uint8Array
+							? value.length
+							: value === undefined
+								? "undefined"
+								: null,
+				},
+			);
+			throw err;
+		}
+	}
+
+	private reportInputInvalid(
+		field: string,
+		reason: string,
+		extra?: Record<string, unknown>,
+	): void {
+		const extras = cleanObject(extra);
+		this.emitAudit("CPACE_INPUT_INVALID", "warn", {
+			field,
+			reason,
+			...(extras ?? {}),
+		});
+	}
+
+	private emitAudit(
+		code: string,
+		level: AuditLevel,
+		data?: Record<string, unknown>,
+	): void {
+		if (!this.auditLogger) return;
+		const cleaned = cleanObject(data);
+		const event: AuditEvent = {
+			ts: new Date().toISOString(),
+			sessionId: this.sessionId,
+			level,
+			code,
+			...(cleaned ? { data: cleaned } : {}),
+		};
+		void this.auditLogger.audit(event);
+	}
+}
+
+function cleanObject(
+	data?: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+	if (!data) return undefined;
+	const cleaned: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(data)) {
+		if (value === undefined) continue;
+		cleaned[key] = value;
+	}
+	return cleaned;
+}
+
+type ExpectedRange = {
+	min?: number;
+	max?: number;
+};
+
+function extractExpected(
+	options?: EnsureBytesOptions,
+): ExpectedRange | undefined {
+	if (!options) return undefined;
+	const expected: ExpectedRange = {};
+	if (options.minLength !== undefined) expected.min = options.minLength;
+	if (options.maxLength !== undefined) expected.max = options.maxLength;
+	return Object.keys(expected).length > 0 ? expected : undefined;
+}
+
+function generateSessionId(): string {
+	const length = 16;
+	const bytes = new Uint8Array(length);
+	if (
+		typeof globalThis.crypto !== "undefined" &&
+		typeof globalThis.crypto.getRandomValues === "function"
+	) {
+		globalThis.crypto.getRandomValues(bytes);
+	} else {
+		for (let i = 0; i < length; i += 1) {
+			bytes[i] = Math.floor(Math.random() * 256);
+		}
+	}
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function isLowOrderError(
+	err: unknown,
+	reason: LowOrderPointReason,
+): err is LowOrderPointError {
+	return err instanceof LowOrderPointError && err.reason === reason;
 }
