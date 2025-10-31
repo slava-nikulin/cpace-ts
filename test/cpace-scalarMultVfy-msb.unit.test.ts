@@ -22,7 +22,9 @@ describe("X25519 scalarMultVfy MSB handling", () => {
 
 		const shared = await G_X25519.scalarMultVfy(yaScalar, Yb);
 		expect(shared.length).toBe(32);
-		expect(shared[31] & 0x80).toBe(0);
+		const sharedLast = shared[shared.length - 1];
+		expect(sharedLast).toBeDefined();
+		expect((sharedLast ?? 0) & 0x80).toBe(0);
 	});
 
 	it("masks non-canonical input points before multiplication", async () => {
@@ -30,12 +32,18 @@ describe("X25519 scalarMultVfy MSB handling", () => {
 		const yaScalar = TC_YA_SCALAR;
 		const Yb = await G_X25519.scalarMult(TC_YB_SCALAR, g);
 		const mutatedYb = Yb.slice();
-		mutatedYb[mutatedYb.length - 1] |= 0x80;
+		const lastIndex = mutatedYb.length - 1;
+		expect(lastIndex).toBeGreaterThanOrEqual(0);
+		const originalLast = mutatedYb[lastIndex];
+		expect(originalLast).toBeDefined();
+		mutatedYb[lastIndex] = (originalLast ?? 0) | 0x80;
 
 		const sharedCanonical = await G_X25519.scalarMultVfy(yaScalar, Yb);
 		const sharedMutated = await G_X25519.scalarMultVfy(yaScalar, mutatedYb);
 
 		expect(sharedMutated).toEqual(sharedCanonical);
-		expect(sharedMutated[sharedMutated.length - 1] & 0x80).toBe(0);
+		const mutatedLast = sharedMutated[sharedMutated.length - 1];
+		expect(mutatedLast).toBeDefined();
+		expect((mutatedLast ?? 0) & 0x80).toBe(0);
 	});
 });

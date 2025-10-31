@@ -9,6 +9,37 @@ import {
 } from "./cpace-strings";
 import type { HashFn } from "./hash";
 
+const MAX_INPUT_LENGTH = 0xffff;
+
+function ensureBytes(
+	name: string,
+	value: Uint8Array | undefined,
+	{
+		optional = true,
+		minLength = 0,
+		maxLength = MAX_INPUT_LENGTH,
+	}: { optional?: boolean; minLength?: number; maxLength?: number } = {},
+): Uint8Array {
+	if (value === undefined) {
+		if (!optional) {
+			throw new Error(`CPaceSession: ${name} is required`);
+		}
+		return new Uint8Array(0);
+	}
+	if (!(value instanceof Uint8Array)) {
+		throw new TypeError(`CPaceSession: ${name} must be a Uint8Array`);
+	}
+	if (value.length < minLength) {
+		throw new Error(
+			`CPaceSession: ${name} must be at least ${minLength} bytes`,
+		);
+	}
+	if (value.length > maxLength) {
+		throw new Error(`CPaceSession: ${name} must be at most ${maxLength} bytes`);
+	}
+	return value;
+}
+
 export interface CPaceSuiteDesc {
 	name: string;
 	group: GroupEnv;
@@ -49,15 +80,39 @@ export class CPaceSession {
 
 	// Было sync → стало async
 	async start(): Promise<
-		{ type: "msg"; payload: Uint8Array; ada?: Uint8Array } | undefined
+		| {
+				type: "msg";
+				payload: Uint8Array;
+				ada?: Uint8Array;
+				adb?: Uint8Array;
+		  }
+		| undefined
 	> {
 		const { suite, prs, ci, sid, ada, adb, role, mode } = this.inps;
 
+		const normalizedPrs = ensureBytes("prs", prs, {
+			optional: false,
+			minLength: 1,
+		});
+		const normalizedCi = ci !== undefined ? ensureBytes("ci", ci) : undefined;
+		const normalizedSid =
+			sid !== undefined ? ensureBytes("sid", sid) : undefined;
+		const normalizedAda =
+			ada !== undefined ? ensureBytes("ada", ada) : undefined;
+		const normalizedAdb =
+			adb !== undefined ? ensureBytes("adb", adb) : undefined;
+
+		if (mode === "symmetric" && normalizedAda && normalizedAdb) {
+			throw new Error(
+				"CPaceSession.start: symmetric mode accepts either ada or adb, not both",
+			);
+		}
+
 		const pwdPoint = await suite.group.calculateGenerator(
 			suite.hash,
-			prs,
-			ci,
-			sid,
+			normalizedPrs,
+			normalizedCi,
+			normalizedSid,
 		);
 		const x = suite.group.sampleScalar();
 		const X = await suite.group.scalarMult(x, pwdPoint);
@@ -69,15 +124,23 @@ export class CPaceSession {
 			return undefined;
 		}
 
-		const result: { type: "msg"; payload: Uint8Array; ada?: Uint8Array } = {
+		const result: {
+			type: "msg";
+			payload: Uint8Array;
+			ada?: Uint8Array;
+			adb?: Uint8Array;
+		} = {
 			type: "msg",
 			payload: this.ourMsg,
 		};
 		if (mode === "symmetric") {
-			const ad = ada ?? adb;
-			if (ad) result.ada = ad;
-		} else if (ada) {
-			result.ada = ada;
+			if (normalizedAda) {
+				result.ada = normalizedAda;
+			} else if (normalizedAdb) {
+				result.adb = normalizedAdb;
+			}
+		} else if (normalizedAda) {
+			result.ada = normalizedAda;
 		}
 		return result;
 	}
@@ -91,7 +154,40 @@ export class CPaceSession {
 	}): Promise<
 		{ type: "msg"; payload: Uint8Array; adb?: Uint8Array } | undefined
 	> {
-		const { prs, ci, sid, adb, role, mode } = this.inps;
+		const { prs, ci, sid, adb, role, mode, suite } = this.inps;
+
+		const normalizedPrs = ensureBytes("prs", prs, {
+			optional: false,
+			minLength: 1,
+		});
+		const normalizedCi = ci !== undefined ? ensureBytes("ci", ci) : undefined;
+		const normalizedSid =
+			sid !== undefined ? ensureBytes("sid", sid) : undefined;
+		const normalizedSessionAdb =
+			adb !== undefined ? ensureBytes("adb", adb) : undefined;
+
+		if (!(msg.payload instanceof Uint8Array)) {
+			throw new InvalidPeerElementError(
+				"CPaceSession.receive: peer payload must be a Uint8Array",
+			);
+		}
+		const expectedPayloadLength = suite.group.fieldSizeBytes;
+		if (msg.payload.length !== expectedPayloadLength) {
+			throw new InvalidPeerElementError(
+				`CPaceSession.receive: peer payload must be ${expectedPayloadLength} bytes`,
+			);
+		}
+		const payload = msg.payload;
+
+		if (msg.ada !== undefined && msg.adb !== undefined) {
+			throw new Error(
+				"CPaceSession.receive: peer message must not include both ada and adb",
+			);
+		}
+		const hasPeerAda = msg.ada !== undefined;
+		const hasPeerAdb = msg.adb !== undefined;
+		const peerAda = hasPeerAda ? ensureBytes("peer ada", msg.ada) : undefined;
+		const peerAdb = hasPeerAdb ? ensureBytes("peer adb", msg.adb) : undefined;
 
 		if (
 			mode === "initiator-responder" &&
@@ -101,7 +197,19 @@ export class CPaceSession {
 			await this.start();
 		}
 
-		this.isk = await this.finish(prs, ci, sid, msg);
+		const sanitizedPeerMsg: {
+			payload: Uint8Array;
+			ada?: Uint8Array;
+			adb?: Uint8Array;
+		} = { payload };
+		if (hasPeerAda && peerAda) sanitizedPeerMsg.ada = peerAda;
+		if (hasPeerAdb && peerAdb) sanitizedPeerMsg.adb = peerAdb;
+		this.isk = await this.finish(
+			normalizedPrs,
+			normalizedCi,
+			normalizedSid,
+			sanitizedPeerMsg,
+		);
 
 		if (mode === "initiator-responder" && role === "responder") {
 			if (!this.ourMsg) {
@@ -111,7 +219,9 @@ export class CPaceSession {
 				type: "msg",
 				payload: this.ourMsg,
 			};
-			if (adb) response.adb = adb;
+			if (normalizedSessionAdb) {
+				response.adb = normalizedSessionAdb;
+			}
 			return response;
 		}
 
@@ -139,6 +249,10 @@ export class CPaceSession {
 		}
 
 		const { suite, mode, role, ada, adb } = this.inps;
+		const normalizedAda =
+			ada !== undefined ? ensureBytes("ada", ada) : undefined;
+		const normalizedAdb =
+			adb !== undefined ? ensureBytes("adb", adb) : undefined;
 
 		const peerPoint = suite.group.deserialize(peerMsg.payload);
 		let k: Uint8Array;
@@ -159,7 +273,7 @@ export class CPaceSession {
 				role === "initiator"
 					? transcriptIr(
 							this.ourMsg,
-							ada ?? new Uint8Array(0),
+							normalizedAda ?? new Uint8Array(0),
 							peerMsg.payload,
 							peerMsg.adb ?? new Uint8Array(0),
 						)
@@ -167,12 +281,31 @@ export class CPaceSession {
 							peerMsg.payload,
 							peerMsg.ada ?? new Uint8Array(0),
 							this.ourMsg,
-							adb ?? new Uint8Array(0),
+							normalizedAdb ?? new Uint8Array(0),
 						);
 		} else {
 			// симметричный режим: объединяем обе строки AD
-			const localAd = this.inps.ada ?? this.inps.adb ?? new Uint8Array(0);
-			const remoteAd = peerMsg.ada ?? peerMsg.adb ?? new Uint8Array(0);
+			if (normalizedAda && normalizedAdb) {
+				throw new Error(
+					"CPaceSession.finish: symmetric mode expects a single associated data source",
+				);
+			}
+			const hasPeerAda = peerMsg.ada !== undefined;
+			const hasPeerAdb = peerMsg.adb !== undefined;
+			const peerAdaBytes = hasPeerAda
+				? ensureBytes("peer ada", peerMsg.ada)
+				: undefined;
+			const peerAdbBytes = hasPeerAdb
+				? ensureBytes("peer adb", peerMsg.adb)
+				: undefined;
+			if (peerAdaBytes && peerAdbBytes) {
+				throw new Error(
+					"CPaceSession.finish: peer message must not include both ada and adb",
+				);
+			}
+			const localAd = normalizedAda ?? normalizedAdb ?? new Uint8Array(0);
+			const remoteAd = peerAdaBytes ?? peerAdbBytes ?? new Uint8Array(0);
+
 			transcript = transcriptOc(
 				this.ourMsg,
 				localAd,

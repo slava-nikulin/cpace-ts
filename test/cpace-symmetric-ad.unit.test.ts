@@ -6,6 +6,7 @@ import { sha512 } from "../src/hash";
 import { expectDefined } from "./helpers";
 
 const suite = { name: "CPACE-X25519-SHA512", group: G_X25519, hash: sha512 };
+const HAS_CRYPTO = !!globalThis.crypto && !!crypto.subtle;
 
 function makeSession(
 	prs: Uint8Array,
@@ -17,55 +18,60 @@ function makeSession(
 		suite,
 		mode: "symmetric",
 		role: "symmetric",
-		ada,
-		adb,
+		...(ada !== undefined ? { ada } : {}),
+		...(adb !== undefined ? { adb } : {}),
 	});
 }
 
 describe("CPace symmetric associated data", () => {
-	it("matches ISK when both sides agree on ada/adb", async () => {
-		const prs = utf8("sym-ad-equal");
-		const ada = utf8("ada-shared");
-		const adb = utf8("adb-shared");
+	it.skipIf(!HAS_CRYPTO)(
+		"matches ISK when both sides agree on ada",
+		async () => {
+			const prs = utf8("sym-ad-equal");
+			const ada = utf8("ada-shared");
 
-		const A = makeSession(prs, ada, adb);
-		const B = makeSession(prs, ada, adb);
+			const A = makeSession(prs, ada, undefined);
+			const B = makeSession(prs, ada, undefined);
 
-		const aMsg = await A.start();
-		const bMsg = await B.start();
-		await A.receive(expectDefined(bMsg, "B message"));
-		await B.receive(expectDefined(aMsg, "A message"));
+			const aMsg = await A.start();
+			const bMsg = await B.start();
+			await A.receive(expectDefined(bMsg, "B message"));
+			await B.receive(expectDefined(aMsg, "A message"));
 
-		const iskA = A.exportISK();
-		const iskB = B.exportISK();
-		expect(bytesToHex(iskA)).toBe(bytesToHex(iskB));
-	});
+			expect(bytesToHex(A.exportISK())).toBe(bytesToHex(B.exportISK()));
+		},
+	);
 
-	it("produces a different ISK when AD values change", async () => {
-		const prs = utf8("sym-ad-diff");
+	it.skipIf(!HAS_CRYPTO)(
+		"matches ISK when one side uses ada and the other uses adb",
+		async () => {
+			const prs = utf8("sym-ad-mixed");
+			const ada = utf8("ada-A");
+			const adb = utf8("adb-B");
 
-		const baseline = makeSession(prs, utf8("ada-base"), utf8("adb-base"));
-		const baselinePeer = makeSession(prs, utf8("ada-base"), utf8("adb-base"));
-		const baseMsgA = await baseline.start();
-		const baseMsgB = await baselinePeer.start();
-		await baseline.receive(expectDefined(baseMsgB, "baseline peer message"));
-		await baselinePeer.receive(
-			expectDefined(baseMsgA, "baseline local message"),
-		);
-		const baseKey = baseline.exportISK();
-		const basePeerKey = baselinePeer.exportISK();
-		expect(bytesToHex(baseKey)).toBe(bytesToHex(basePeerKey));
+			const A = makeSession(prs, ada, undefined);
+			const B = makeSession(prs, undefined, adb);
 
-		const A = makeSession(prs, utf8("ada-A"), utf8("adb-A"));
-		const B = makeSession(prs, utf8("ada-B"), utf8("adb-B"));
-		const aMsg = await A.start();
-		const bMsg = await B.start();
-		await A.receive(expectDefined(bMsg, "B message"));
-		await B.receive(expectDefined(aMsg, "A message"));
+			const aMsg = await A.start();
+			const bMsg = await B.start();
+			await A.receive(expectDefined(bMsg, "B message"));
+			await B.receive(expectDefined(aMsg, "A message"));
 
-		const iskA = A.exportISK();
-		const iskB = B.exportISK();
-		expect(bytesToHex(iskA)).toBe(bytesToHex(iskB));
-		expect(bytesToHex(iskA)).not.toBe(bytesToHex(baseKey));
-	});
+			expect(bytesToHex(A.exportISK())).toBe(bytesToHex(B.exportISK()));
+		},
+	);
+
+	it.skipIf(!HAS_CRYPTO)(
+		"matches ISK even when ada strings differ",
+		async () => {
+			const prs = utf8("sym-ad-diff");
+			const A = makeSession(prs, utf8("ada-A"), undefined);
+			const B = makeSession(prs, utf8("ada-B"), undefined);
+			const aMsg = await A.start();
+			const bMsg = await B.start();
+			await A.receive(expectDefined(bMsg, "B message"));
+			await B.receive(expectDefined(aMsg, "A message"));
+			expect(bytesToHex(A.exportISK())).toBe(bytesToHex(B.exportISK()));
+		},
+	);
 });

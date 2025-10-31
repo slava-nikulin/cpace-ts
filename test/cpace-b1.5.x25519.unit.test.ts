@@ -38,13 +38,8 @@ function TC_G_X255_DSI(): Uint8Array {
 describe("Appendix B.1.5 — ISK calculation (initiator/responder) — vectors", () => {
 	it("reproduces the draft ISK exactly", async () => {
 		// 1) generator_string sanity
-		const _genStr = generatorString(
-			TC_G_X255_DSI(),
-			TC_PRS,
-			TC_CI,
-			TC_SID,
-			128,
-		);
+		const genStr = generatorString(TC_G_X255_DSI(), TC_PRS, TC_CI, TC_SID, 128);
+		expect(genStr.length).toBeGreaterThan(0);
 		// но в тестах дальше нам важен именно сам g через реализацию
 		const g = await G_X25519.calculateGenerator(sha512, TC_PRS, TC_CI, TC_SID);
 		// сверяемся с вектором

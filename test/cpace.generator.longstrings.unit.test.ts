@@ -36,7 +36,8 @@ describe("generator_string: длинные/корнер-кейсы", () => {
 			const lenZ = calcLenZpad(s_in_bytes, DSI, PRS);
 			expect(lenZ).toBeGreaterThanOrEqual(0);
 
-			const _g = generatorString(DSI, PRS, CI, sid, s_in_bytes);
+			const g = generatorString(DSI, PRS, CI, sid, s_in_bytes);
+			expect(g.length).toBeGreaterThan(0);
 
 			// g = lv_cat(DSI, PRS, zero_bytes(len_zpad), CI, sid)
 			// Проверим, что третье поле действительно нулевой блок нужной длины.
@@ -58,9 +59,6 @@ describe("generator_string: длинные/корнер-кейсы", () => {
 		const pDSI = prependLen(DSI);
 		const pPRS = prependLen(PRS);
 		const pZ = prependLen(zpad(lenZ));
-		const _pCI = prependLen(CI);
-		const _pSID = prependLen(sid);
-
 		const expectPrefix = new Uint8Array(pDSI.length + pPRS.length + pZ.length);
 		expectPrefix.set(pDSI, 0);
 		expectPrefix.set(pPRS, pDSI.length);

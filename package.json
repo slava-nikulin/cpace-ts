@@ -30,12 +30,13 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsup",
+		"typecheck": "tsc -p tsconfig.json",
+		"build": "tsc -p tsconfig.build.json",
+		"test:typecheck": "tsc -p tsconfig.test.json",
 		"dev": "tsup --watch",
 		"prepublishOnly": "pnpm run build",
 		"lint:fix": "biome check --write --unsafe",
 		"lint": "biome check .",
-		"typecheck": "tsc -b",
 		"test:unit": "vitest run --project unit",
 		"test:int": "vitest run --project integration",
 		"preflight": "./.husky/pre-push"

@@ -26,7 +26,7 @@ describe("CPace abort on low-order peer element", () => {
 				role: "responder",
 			});
 
-			const _aMsg = await A.start(); // нормальное сообщение от A — ок
+			await A.start(); // нормальное сообщение от A — ок
 			await expect(B.receive({ type: "msg", payload: TC_U0 })).rejects.toThrow(
 				/invalid peer element/i,
 			);

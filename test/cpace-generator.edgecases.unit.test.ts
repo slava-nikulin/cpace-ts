@@ -12,6 +12,9 @@ function leb128Decode(buf: Uint8Array, offset: number): [number, number] {
 	let cursor = offset;
 	while (cursor < buf.length) {
 		const byte = buf[cursor];
+		if (byte === undefined) {
+			throw new Error("leb128Decode: unexpected end of buffer");
+		}
 		result |= (byte & 0x7f) << shift;
 		cursor += 1;
 		if ((byte & 0x80) === 0) {

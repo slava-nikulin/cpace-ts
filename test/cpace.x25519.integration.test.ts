@@ -314,7 +314,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			ada: utf8("ADa"),
 		});
 
-		const _aMsg = await a.start();
+		await a.start();
 
 		// Подмена ответа: вместо реального Yb кидаем low-order u=0^32
 		const fakeLowOrder = new Uint8Array(32); // u0 из векторов

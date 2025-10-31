@@ -7,7 +7,13 @@ import { expectDefined } from "./helpers";
 
 function randBytes(n: number): Uint8Array {
 	const out = new Uint8Array(n);
-	crypto.getRandomValues(out);
+	const cryptoObj = globalThis.crypto;
+	if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
+		throw new Error(
+			"crypto.getRandomValues is unavailable in this environment",
+		);
+	}
+	cryptoObj.getRandomValues(out);
 	return out;
 }
 
@@ -28,7 +34,8 @@ function mutateOneByte(x: Uint8Array): Uint8Array {
 	if (x.length === 0) return new Uint8Array([1]); // если пусто — сделаем непустым
 	const y = x.slice();
 	const idx = (Math.random() * y.length) | 0;
-	y[idx] ^= 1 + ((Math.random() * 254) | 0); // меняем байт
+	const current = y[idx] ?? 0;
+	y[idx] = current ^ (1 + ((Math.random() * 254) | 0)); // меняем байт
 	return y;
 }
 
@@ -40,6 +47,15 @@ function suite() {
 	};
 }
 
+type SymmetricAd = { kind: "ada" | "adb"; value: Uint8Array };
+
+function randomSymmetricAd(maxLen: number): SymmetricAd | undefined {
+	if (Math.random() < 0.5) return undefined;
+	const value = randAscii((Math.random() * maxLen) | 0);
+	const kind: SymmetricAd["kind"] = Math.random() < 0.5 ? "ada" : "adb";
+	return { kind, value };
+}
+
 async function runCpaceIR(
 	prs: Uint8Array,
 	ci?: Uint8Array,
@@ -47,67 +63,64 @@ async function runCpaceIR(
 	ADa?: Uint8Array,
 	ADb?: Uint8Array,
 ) {
-	const A = new CPaceSession({
+	const suiteDesc = suite();
+	const initiator = new CPaceSession({
 		prs,
-		suite: suite(),
+		suite: suiteDesc,
 		mode: "initiator-responder",
 		role: "initiator",
-		ci,
-		sid,
-		ada: ADa,
+		...(ci !== undefined ? { ci } : {}),
+		...(sid !== undefined ? { sid } : {}),
+		...(ADa !== undefined ? { ada: ADa } : {}),
 	});
-	const B = new CPaceSession({
+	const responder = new CPaceSession({
 		prs,
-		suite: suite(),
+		suite: suiteDesc,
 		mode: "initiator-responder",
 		role: "responder",
-		ci,
-		sid,
-		adb: ADb,
+		...(ci !== undefined ? { ci } : {}),
+		...(sid !== undefined ? { sid } : {}),
+		...(ADb !== undefined ? { adb: ADb } : {}),
 	});
 
-	const msgA = await A.start(); // инициатор шлёт
-	const msgB = await B.receive(
+	const msgA = await initiator.start(); // инициатор шлёт
+	const msgB = await responder.receive(
 		expectDefined(msgA, "initiator handshake message"),
 	); // респондер отвечает
-	await A.receive(expectDefined(msgB, "responder handshake message")); // инициатор заканчивает
+	await initiator.receive(expectDefined(msgB, "responder handshake message")); // инициатор заканчивает
 
-	return { A, B };
+	return { A: initiator, B: responder };
 }
 
 async function runCpaceOC(
 	prs: Uint8Array,
 	ci?: Uint8Array,
 	sid?: Uint8Array,
-	ADa?: Uint8Array,
-	ADb?: Uint8Array,
+	adA?: SymmetricAd,
+	adB?: SymmetricAd,
 ) {
-	// симметричный: оба могут послать в любом порядке
-	const A = new CPaceSession({
+	const suiteDesc = suite();
+	const mkInputs = (ad?: SymmetricAd) => ({
 		prs,
-		suite: suite(),
-		mode: "symmetric",
-		role: "symmetric",
-		ci,
-		sid,
-		ada: ADa,
-	});
-	const B = new CPaceSession({
-		prs,
-		suite: suite(),
-		mode: "symmetric",
-		role: "symmetric",
-		ci,
-		sid,
-		adb: ADb,
+		suite: suiteDesc,
+		mode: "symmetric" as const,
+		role: "symmetric" as const,
+		...(ci !== undefined ? { ci } : {}),
+		...(sid !== undefined ? { sid } : {}),
+		...(ad === undefined
+			? {}
+			: ad.kind === "ada"
+				? { ada: ad.value }
+				: { adb: ad.value }),
 	});
 
-	const msgA = await A.start();
-	const msgB = await B.start();
-	const safeMsgB = expectDefined(msgB, "symmetric responder message");
-	const safeMsgA = expectDefined(msgA, "symmetric initiator message");
-	await A.receive({ type: "msg", payload: safeMsgB.payload, adb: ADb });
-	await B.receive({ type: "msg", payload: safeMsgA.payload, ada: ADa });
+	const A = new CPaceSession(mkInputs(adA));
+	const B = new CPaceSession(mkInputs(adB));
+
+	const msgA = expectDefined(await A.start(), "symmetric initiator message");
+	const msgB = expectDefined(await B.start(), "symmetric responder message");
+	await A.receive(msgB);
+	await B.receive(msgA);
 
 	return { A, B };
 }
@@ -204,10 +217,10 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			const prs = randAscii(6 + ((Math.random() * 24) | 0));
 			const ci = maybe(randBytes((Math.random() * 32) | 0));
 			const sid = maybe(randBytes(16));
-			const ADa = maybe(randAscii((Math.random() * 8) | 0));
-			const ADb = maybe(randAscii((Math.random() * 8) | 0));
+			const adA = randomSymmetricAd(8);
+			const adB = randomSymmetricAd(8);
 
-			const { A, B } = await runCpaceOC(prs, ci, sid, ADa, ADb);
+			const { A, B } = await runCpaceOC(prs, ci, sid, adA, adB);
 			expect(A.exportISK()).toEqual(B.exportISK());
 			if (sid && sid.length > 0) {
 				expect(A.sidOutput).toEqual(sid);
@@ -228,32 +241,64 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			const prs = randAscii(10);
 			const ci = maybe(randBytes(7));
 			const sid = maybe(randBytes(16));
-			const ADa = maybe(randAscii(5));
-			const ADb = maybe(randAscii(5));
+			const adA = randomSymmetricAd(5);
+			const adB = randomSymmetricAd(5);
 
-			const base = await runCpaceOC(prs, ci, sid, ADa, ADb);
+			const base = await runCpaceOC(prs, ci, sid, adA, adB);
 			const ref = base.A.exportISK();
 
-			const fields: Array<[string, Uint8Array | undefined]> = [
-				["PRS", prs],
-				["CI", ci],
-				["SID", sid],
-				["ADa", ADa],
-				["ADb", ADb],
-			];
-
-			for (const [name, _val] of fields) {
-				const prs2 = name === "PRS" ? mutateOneByte(prs) : prs;
-				const ci2 =
-					name === "CI" ? (ci ? mutateOneByte(ci) : randBytes(1)) : ci;
-				const sid2 =
-					name === "SID" ? (sid ? mutateOneByte(sid) : randBytes(9)) : sid;
-				const ADa2 =
-					name === "ADa" ? (ADa ? mutateOneByte(ADa) : randAscii(1)) : ADa;
-				const ADb2 =
-					name === "ADb" ? (ADb ? mutateOneByte(ADb) : randAscii(1)) : ADb;
-
-				const { A } = await runCpaceOC(prs2, ci2, sid2, ADa2, ADb2);
+			{
+				const { A } = await runCpaceOC(mutateOneByte(prs), ci, sid, adA, adB);
+				expect(A.exportISK()).not.toEqual(ref);
+			}
+			{
+				const { A } = await runCpaceOC(
+					prs,
+					ci ? mutateOneByte(ci) : randBytes(1),
+					sid,
+					adA,
+					adB,
+				);
+				expect(A.exportISK()).not.toEqual(ref);
+			}
+			{
+				const { A } = await runCpaceOC(
+					prs,
+					ci,
+					sid ? mutateOneByte(sid) : randBytes(9),
+					adA,
+					adB,
+				);
+				expect(A.exportISK()).not.toEqual(ref);
+			}
+			{
+				const mutatedAdA: SymmetricAd | undefined = adA
+					? { kind: adA.kind, value: mutateOneByte(adA.value) }
+					: { kind: "ada", value: randAscii(1) };
+				const { A } = await runCpaceOC(prs, ci, sid, mutatedAdA, adB);
+				expect(A.exportISK()).not.toEqual(ref);
+			}
+			{
+				const mutatedAdB: SymmetricAd | undefined = adB
+					? { kind: adB.kind, value: mutateOneByte(adB.value) }
+					: { kind: "adb", value: randAscii(1) };
+				const { A } = await runCpaceOC(prs, ci, sid, adA, mutatedAdB);
+				expect(A.exportISK()).not.toEqual(ref);
+			}
+			{
+				const swapKind = (ad: SymmetricAd): SymmetricAd => ({
+					kind: ad.kind === "ada" ? "adb" : "ada",
+					value: ad.value,
+				});
+				const swappedAdA: SymmetricAd =
+					adA === undefined
+						? { kind: "ada", value: randAscii(1) }
+						: swapKind(adA);
+				const swappedAdB: SymmetricAd =
+					adB === undefined
+						? { kind: "adb", value: randAscii(1) }
+						: swapKind(adB);
+				const { A } = await runCpaceOC(prs, ci, sid, swappedAdA, swappedAdB);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
 		}
