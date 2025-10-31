@@ -47,6 +47,16 @@ async function x25519(
 	return x25519Webcrypto(scalar, point);
 }
 
+export class LowOrderPointError extends Error {
+	constructor(
+		message = "X25519Group.scalarMultVfy: low-order or invalid point",
+		options?: ErrorOptions,
+	) {
+		super(message, options);
+		this.name = "LowOrderPointError";
+	}
+}
+
 export class X25519Group implements GroupEnv {
 	readonly name = "X25519";
 	readonly fieldSizeBytes = 32;
@@ -85,20 +95,23 @@ export class X25519Group implements GroupEnv {
 		scalar: Uint8Array,
 		point: Uint8Array,
 	): Promise<Uint8Array> {
-		const u = point.slice();
-		u[u.length - 1] = (u[u.length - 1] ?? 0) & 0x7f; // clear 255 bit
-
+		let r: Uint8Array;
 		try {
-			const r = await x25519Webcrypto(scalar, u);
-
-			if (compareBytes(r, this.I) === 0) {
-				return this.I;
-			}
-
-			return r;
-		} catch (_err) {
-			return this.I;
+			r = await x25519(scalar, point.slice());
+		} catch (err) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: invalid point multiplication failed",
+				{ cause: err },
+			);
 		}
+
+		if (compareBytes(r, this.I) === 0) {
+			throw new LowOrderPointError(
+				"X25519Group.scalarMultVfy: low-order result (all-zero shared secret)",
+			);
+		}
+
+		return r;
 	}
 
 	serialize(point: Uint8Array): Uint8Array {

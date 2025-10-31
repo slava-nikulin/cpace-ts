@@ -1,5 +1,5 @@
 import { compareBytes } from "./bytes";
-import type { GroupEnv } from "./cpace-group-x25519"; // или твой путь
+import { LowOrderPointError, type GroupEnv } from "./cpace-group-x25519"; // или твой путь
 import {
 	concat,
 	lvCat,
@@ -126,7 +126,15 @@ export class CPaceSession {
 		const { suite, mode, role, ada, adb } = this.inps;
 
 		const peerPoint = suite.group.deserialize(peerMsg.payload);
-		const k = await suite.group.scalarMultVfy(this.ephemeralScalar, peerPoint);
+		let k: Uint8Array;
+		try {
+			k = await suite.group.scalarMultVfy(this.ephemeralScalar, peerPoint);
+		} catch (err) {
+			if (err instanceof LowOrderPointError) {
+				throw new Error("CPaceSession.finish: invalid peer element (G.I)");
+			}
+			throw err;
+		}
 
 		if (compareBytes(k, suite.group.I) === 0) {
 			throw new Error("CPaceSession.finish: invalid peer element (G.I)");
