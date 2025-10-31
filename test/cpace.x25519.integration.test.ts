@@ -76,7 +76,8 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			ada,
+			ada: ada,
+			adb: adb,
 		});
 		const q = new CPaceSession({
 			prs,
@@ -85,7 +86,8 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			adb,
+			ada: ada,
+			adb: adb,
 		});
 
 		const pm = expectDefined(await p.start(), "P start message");

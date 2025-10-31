@@ -10,8 +10,11 @@ export function compareBytes(a: Uint8Array, b: Uint8Array): number {
 
 export function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
 	if (a.length !== b.length) return false;
+	let diff = 0;
 	for (let i = 0; i < a.length; i += 1) {
-		if (a[i] !== b[i]) return false;
+		const ai = a[i] ?? 0;
+		const bi = b[i] ?? 0;
+		diff |= ai ^ bi;
 	}
-	return true;
+	return diff === 0;
 }

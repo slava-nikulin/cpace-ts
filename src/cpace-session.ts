@@ -51,7 +51,7 @@ export class CPaceSession {
 	async start(): Promise<
 		{ type: "msg"; payload: Uint8Array; ada?: Uint8Array } | undefined
 	> {
-		const { suite, prs, ci, sid, ada, role, mode } = this.inps;
+		const { suite, prs, ci, sid, ada, adb, role, mode } = this.inps;
 
 		const pwdPoint = await suite.group.calculateGenerator(
 			suite.hash,
@@ -73,7 +73,12 @@ export class CPaceSession {
 			type: "msg",
 			payload: this.ourMsg,
 		};
-		if (ada) result.ada = ada;
+		if (mode === "symmetric") {
+			const ad = ada ?? adb;
+			if (ad) result.ada = ad;
+		} else if (ada) {
+			result.ada = ada;
+		}
 		return result;
 	}
 
@@ -165,11 +170,14 @@ export class CPaceSession {
 							adb ?? new Uint8Array(0),
 						);
 		} else {
+			// симметричный режим: объединяем обе строки AD
+			const localAd = this.inps.ada ?? this.inps.adb ?? new Uint8Array(0);
+			const remoteAd = peerMsg.ada ?? peerMsg.adb ?? new Uint8Array(0);
 			transcript = transcriptOc(
 				this.ourMsg,
-				ada ?? new Uint8Array(0),
+				localAd,
 				peerMsg.payload,
-				peerMsg.ada ?? new Uint8Array(0),
+				remoteAd,
 			);
 		}
 
