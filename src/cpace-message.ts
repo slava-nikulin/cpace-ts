@@ -21,7 +21,11 @@ export function validateAndSanitizePeerMessage(
 	suite: CPaceSuiteDesc,
 	msg: CPaceMessage,
 	ensureOptional: (field: string, value?: Uint8Array) => Uint8Array | undefined,
-	onInvalid: (field: string, reason: string, extra?: Record<string, unknown>) => void,
+	onInvalid: (
+		field: string,
+		reason: string,
+		extra?: Record<string, unknown>,
+	) => void,
 ): CPaceMessage {
 	if (!(msg.payload instanceof Uint8Array)) {
 		throw new InvalidPeerElementError(

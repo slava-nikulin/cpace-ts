@@ -54,9 +54,7 @@ export function ensureField(
 		return ensureBytes(field, value, options);
 	} catch (err) {
 		const context =
-			options === undefined
-				? { field, value }
-				: { field, value, options };
+			options === undefined ? { field, value } : { field, value, options };
 		onError?.(err, context);
 		throw err;
 	}

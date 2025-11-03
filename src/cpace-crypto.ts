@@ -1,8 +1,8 @@
-import { concat, lvCat, utf8 } from "./cpace-strings";
+import { compareBytes } from "./bytes";
+import { LowOrderPointError } from "./cpace-group-x25519";
 import type { CPaceSuiteDesc } from "./cpace-session";
 import { InvalidPeerElementError } from "./cpace-session";
-import { LowOrderPointError } from "./cpace-group-x25519";
-import { compareBytes } from "./bytes";
+import { concat, lvCat, utf8 } from "./cpace-strings";
 
 const EMPTY = new Uint8Array(0);
 
@@ -36,7 +36,7 @@ export async function deriveSharedSecretOrThrow(
 		peerPoint = suite.group.deserialize(peerPayload);
 	} catch (err) {
 		onPeerInvalid(
-			err instanceof Error ? err.name ?? "Error" : "UnknownError",
+			err instanceof Error ? (err.name ?? "Error") : "UnknownError",
 			err instanceof Error ? err.message : undefined,
 		);
 		throw new InvalidPeerElementError(undefined, {
@@ -52,7 +52,7 @@ export async function deriveSharedSecretOrThrow(
 			onLowOrder();
 		} else {
 			onPeerInvalid(
-				err instanceof Error ? err.name ?? "Error" : "UnknownError",
+				err instanceof Error ? (err.name ?? "Error") : "UnknownError",
 				err instanceof Error ? err.message : undefined,
 			);
 		}

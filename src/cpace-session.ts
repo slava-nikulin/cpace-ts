@@ -1,6 +1,16 @@
 import type { AuditLevel, AuditLogger } from "./cpace-audit";
 import { AUDIT_CODES, emitAuditEvent } from "./cpace-audit";
-import { type GroupEnv } from "./cpace-group-x25519";
+import {
+	computeLocalElement,
+	deriveIskAndSid,
+	deriveSharedSecretOrThrow,
+} from "./cpace-crypto";
+import type { GroupEnv } from "./cpace-group-x25519";
+import {
+	buildOutboundMessage,
+	validateAndSanitizePeerMessage,
+} from "./cpace-message";
+import { makeTranscriptIR, makeTranscriptOC } from "./cpace-transcript";
 import {
 	cleanObject,
 	type EnsureBytesOptions,
@@ -9,13 +19,6 @@ import {
 	generateSessionId,
 } from "./cpace-validation";
 import type { HashFn } from "./hash";
-import { buildOutboundMessage, validateAndSanitizePeerMessage } from "./cpace-message";
-import { makeTranscriptIR, makeTranscriptOC } from "./cpace-transcript";
-import {
-	computeLocalElement,
-	deriveIskAndSid,
-	deriveSharedSecretOrThrow,
-} from "./cpace-crypto";
 
 const EMPTY = new Uint8Array(0);
 
@@ -133,34 +136,34 @@ export class CPaceSession {
 
 		this.emitAudit(AUDIT_CODES.CPACE_START_BEGIN, "info", { mode, role });
 
-	const { scalar: ephemeralScalar, serialized: localMsg } =
-		await computeLocalElement(
-			suite,
-			normalizedPrs,
-			normalizedCi,
-			normalizedSid,
-		);
-	this.ephemeralScalar = ephemeralScalar;
-	this.localMsg = localMsg;
+		const { scalar: ephemeralScalar, serialized: localMsg } =
+			await computeLocalElement(
+				suite,
+				normalizedPrs,
+				normalizedCi,
+				normalizedSid,
+			);
+		this.ephemeralScalar = ephemeralScalar;
+		this.localMsg = localMsg;
 
 		if (mode === "initiator-responder" && role === "responder") {
 			return undefined;
 		}
 
-	const outbound = buildOutboundMessage(
-		mode,
-		this.localMsg,
-		normalizedAda,
-		normalizedAdb,
-	);
+		const outbound = buildOutboundMessage(
+			mode,
+			this.localMsg,
+			normalizedAda,
+			normalizedAdb,
+		);
 
-	this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
-		payload_len: outbound.payload.length,
-		ada_present: Boolean(outbound.ada?.length),
-		adb_present: Boolean(outbound.adb?.length),
-	});
+		this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
+			payload_len: outbound.payload.length,
+			ada_present: Boolean(outbound.ada?.length),
+			adb_present: Boolean(outbound.adb?.length),
+		});
 
-	return outbound;
+		return outbound;
 	}
 
 	/**
@@ -188,11 +191,11 @@ export class CPaceSession {
 
 		await this.ensureResponderHasLocalMsg(mode, role);
 
-	this.emitAudit(AUDIT_CODES.CPACE_RX_RECEIVED, "info", {
-		payload_len: sanitizedPeerMsg.payload.length,
-		ada_present: Boolean(sanitizedPeerMsg.ada?.length),
-		adb_present: Boolean(sanitizedPeerMsg.adb?.length),
-	});
+		this.emitAudit(AUDIT_CODES.CPACE_RX_RECEIVED, "info", {
+			payload_len: sanitizedPeerMsg.payload.length,
+			ada_present: Boolean(sanitizedPeerMsg.ada?.length),
+			adb_present: Boolean(sanitizedPeerMsg.adb?.length),
+		});
 
 		this.iskValue = await this.finish(normalizedSid, sanitizedPeerMsg);
 
@@ -207,11 +210,11 @@ export class CPaceSession {
 			if (normalizedSessionAdb) {
 				response.adb = normalizedSessionAdb;
 			}
-		this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
-			payload_len: response.payload.length,
-			ada_present: false,
-			adb_present: Boolean(response.adb?.length),
-		});
+			this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
+				payload_len: response.payload.length,
+				ada_present: false,
+				adb_present: Boolean(response.adb?.length),
+			});
 			return response;
 		}
 
@@ -346,7 +349,11 @@ export class CPaceSession {
 		mode: CPaceMode,
 		role: Role,
 	): Promise<void> {
-		if (mode === "initiator-responder" && role === "responder" && !this.localMsg) {
+		if (
+			mode === "initiator-responder" &&
+			role === "responder" &&
+			!this.localMsg
+		) {
 			await this.start();
 		}
 	}
@@ -377,54 +384,57 @@ export class CPaceSession {
 		});
 	}
 
-private ensureOptional(
-	field: string,
-	value: Uint8Array | undefined,
-	options?: EnsureBytesOptions,
-): Uint8Array | undefined {
-	if (value === undefined) return undefined;
-	return ensureFieldValidated(field, value, options, (err, ctx) => {
-		this.reportInputInvalid(
+	private ensureOptional(
+		field: string,
+		value: Uint8Array | undefined,
+		options?: EnsureBytesOptions,
+	): Uint8Array | undefined {
+		if (value === undefined) return undefined;
+		return ensureFieldValidated(field, value, options, (err, ctx) => {
+			this.reportInputInvalid(
+				field,
+				err instanceof Error ? err.message : "validation failed",
+				this.buildValidationAuditExtra(ctx),
+			);
+		});
+	}
+
+	private buildValidationAuditExtra(ctx: {
+		options?: EnsureBytesOptions;
+		value: Uint8Array | undefined;
+	}): {
+		expected?: ReturnType<typeof extractExpected>;
+		actual: number | "undefined" | null;
+	} {
+		return {
+			expected: extractExpected(ctx.options),
+			actual:
+				ctx.value instanceof Uint8Array
+					? ctx.value.length
+					: ctx.value === undefined
+						? "undefined"
+						: null,
+		};
+	}
+
+	private reportInputInvalid(
+		field: string,
+		reason: string,
+		extra?: Record<string, unknown>,
+	): void {
+		const extras = cleanObject(extra);
+		this.emitAudit(AUDIT_CODES.CPACE_INPUT_INVALID, "warn", {
 			field,
-			err instanceof Error ? err.message : "validation failed",
-			this.buildValidationAuditExtra(ctx),
-		);
-	});
-}
+			reason,
+			...(extras ?? {}),
+		});
+	}
 
-private buildValidationAuditExtra(ctx: {
-	options?: EnsureBytesOptions;
-	value: Uint8Array | undefined;
-}): { expected?: ReturnType<typeof extractExpected>; actual: number | "undefined" | null } {
-	return {
-		expected: extractExpected(ctx.options),
-		actual:
-			ctx.value instanceof Uint8Array
-				? ctx.value.length
-				: ctx.value === undefined
-					? "undefined"
-					: null,
-	};
-}
-
-private reportInputInvalid(
-	field: string,
-	reason: string,
-	extra?: Record<string, unknown>,
-): void {
-	const extras = cleanObject(extra);
-	this.emitAudit(AUDIT_CODES.CPACE_INPUT_INVALID, "warn", {
-		field,
-		reason,
-		...(extras ?? {}),
-	});
-}
-
-private emitAudit(
-	code: string,
-	level: AuditLevel,
-	data?: Record<string, unknown>,
-): void {
-	emitAuditEvent(this.auditLogger, this.sessionId, code, level, data);
-}
+	private emitAudit(
+		code: string,
+		level: AuditLevel,
+		data?: Record<string, unknown>,
+	): void {
+		emitAuditEvent(this.auditLogger, this.sessionId, code, level, data);
+	}
 }
