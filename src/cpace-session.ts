@@ -1,4 +1,6 @@
 import { compareBytes } from "./bytes";
+import type { AuditLevel, AuditLogger } from "./cpace-audit";
+import { emitAuditEvent } from "./cpace-audit";
 import {
 	type GroupEnv,
 	LowOrderPointError,
@@ -11,44 +13,16 @@ import {
 	transcriptOc,
 	utf8,
 } from "./cpace-strings";
+import {
+	cleanObject,
+	type EnsureBytesOptions,
+	ensureField as ensureFieldValidated,
+	extractExpected,
+	generateSessionId,
+} from "./cpace-validation";
 import type { HashFn } from "./hash";
 
-const MAX_INPUT_LENGTH = 0xffff;
-
-type EnsureBytesOptions = {
-	optional?: boolean;
-	minLength?: number;
-	maxLength?: number;
-};
-
-function ensureBytes(
-	name: string,
-	value: Uint8Array | undefined,
-	{
-		optional = true,
-		minLength = 0,
-		maxLength = MAX_INPUT_LENGTH,
-	}: EnsureBytesOptions = {},
-): Uint8Array {
-	if (value === undefined) {
-		if (!optional) {
-			throw new Error(`CPaceSession: ${name} is required`);
-		}
-		return new Uint8Array(0);
-	}
-	if (!(value instanceof Uint8Array)) {
-		throw new TypeError(`CPaceSession: ${name} must be a Uint8Array`);
-	}
-	if (value.length < minLength) {
-		throw new Error(
-			`CPaceSession: ${name} must be at least ${minLength} bytes`,
-		);
-	}
-	if (value.length > maxLength) {
-		throw new Error(`CPaceSession: ${name} must be at most ${maxLength} bytes`);
-	}
-	return value;
-}
+export type { AuditEvent, AuditLevel, AuditLogger } from "./cpace-audit";
 
 export interface CPaceSuiteDesc {
 	name: string;
@@ -69,21 +43,6 @@ export type CPaceInputs = {
 	adb?: Uint8Array;
 	sid?: Uint8Array;
 };
-
-export type AuditLevel = "info" | "warn" | "error" | "security";
-
-export type AuditEvent = {
-	ts: string;
-	sessionId: string;
-	level: AuditLevel;
-	code: string;
-	message?: string;
-	data?: Record<string, unknown>;
-};
-
-export interface AuditLogger {
-	audit(event: AuditEvent): void | Promise<void>;
-}
 
 export class InvalidPeerElementError extends Error {
 	constructor(
@@ -138,14 +97,10 @@ export class CPaceSession {
 			optional: false,
 			minLength: 1,
 		});
-		const normalizedCi =
-			ci !== undefined ? this.ensureField("ci", ci) : undefined;
-		const normalizedSid =
-			sid !== undefined ? this.ensureField("sid", sid) : undefined;
-		const normalizedAda =
-			ada !== undefined ? this.ensureField("ada", ada) : undefined;
-		const normalizedAdb =
-			adb !== undefined ? this.ensureField("adb", adb) : undefined;
+		const normalizedCi = this.ensureField("ci", ci);
+		const normalizedSid = this.ensureField("sid", sid);
+		const normalizedAda = this.ensureField("ada", ada);
+		const normalizedAdb = this.ensureField("adb", adb);
 
 		if (mode === "symmetric" && normalizedAda && normalizedAdb) {
 			this.reportInputInvalid(
@@ -165,8 +120,8 @@ export class CPaceSession {
 		const pwdPoint = await suite.group.calculateGenerator(
 			suite.hash,
 			normalizedPrs,
-			normalizedCi,
-			normalizedSid,
+			normalizedCi ?? new Uint8Array(0),
+			normalizedSid ?? new Uint8Array(0),
 		);
 		const x = suite.group.sampleScalar();
 		const X = await suite.group.scalarMult(x, pwdPoint);
@@ -216,16 +171,13 @@ export class CPaceSession {
 	> {
 		const { prs, ci, sid, adb, role, mode, suite } = this.inps;
 
-		const normalizedPrs = this.ensureField("prs", prs, {
+		this.ensureField("prs", prs, {
 			optional: false,
 			minLength: 1,
 		});
-		const normalizedCi =
-			ci !== undefined ? this.ensureField("ci", ci) : undefined;
-		const normalizedSid =
-			sid !== undefined ? this.ensureField("sid", sid) : undefined;
-		const normalizedSessionAdb =
-			adb !== undefined ? this.ensureField("adb", adb) : undefined;
+		this.ensureField("ci", ci);
+		const normalizedSid = this.ensureField("sid", sid);
+		const normalizedSessionAdb = this.ensureField("adb", adb);
 
 		if (!(msg.payload instanceof Uint8Array)) {
 			throw new InvalidPeerElementError(
@@ -255,12 +207,8 @@ export class CPaceSession {
 		}
 		const hasPeerAda = msg.ada !== undefined;
 		const hasPeerAdb = msg.adb !== undefined;
-		const peerAda = hasPeerAda
-			? this.ensureField("peer ada", msg.ada)
-			: undefined;
-		const peerAdb = hasPeerAdb
-			? this.ensureField("peer adb", msg.adb)
-			: undefined;
+		const peerAda = this.ensureField("peer ada", msg.ada);
+		const peerAdb = this.ensureField("peer adb", msg.adb);
 
 		if (
 			mode === "initiator-responder" &&
@@ -288,12 +236,7 @@ export class CPaceSession {
 			),
 		});
 
-		this.isk = await this.finish(
-			normalizedPrs,
-			normalizedCi,
-			normalizedSid,
-			sanitizedPeerMsg,
-		);
+		this.isk = await this.finish(normalizedSid, sanitizedPeerMsg);
 
 		if (mode === "initiator-responder" && role === "responder") {
 			if (!this.ourMsg) {
@@ -327,8 +270,6 @@ export class CPaceSession {
 	}
 
 	private async finish(
-		_prs: Uint8Array,
-		_ci: Uint8Array | undefined,
 		sid: Uint8Array | undefined,
 		peerMsg: { payload: Uint8Array; ada?: Uint8Array; adb?: Uint8Array },
 	): Promise<Uint8Array> {
@@ -337,10 +278,8 @@ export class CPaceSession {
 		}
 
 		const { suite, mode, role, ada, adb } = this.inps;
-		const normalizedAda =
-			ada !== undefined ? this.ensureField("ada", ada) : undefined;
-		const normalizedAdb =
-			adb !== undefined ? this.ensureField("adb", adb) : undefined;
+		const normalizedAda = this.ensureField("ada", ada);
+		const normalizedAdb = this.ensureField("adb", adb);
 
 		this.emitAudit("CPACE_FINISH_BEGIN", "info", { mode, role });
 
@@ -406,14 +345,8 @@ export class CPaceSession {
 					"CPaceSession.finish: symmetric mode expects a single associated data source",
 				);
 			}
-			const hasPeerAda = peerMsg.ada !== undefined;
-			const hasPeerAdb = peerMsg.adb !== undefined;
-			const peerAdaBytes = hasPeerAda
-				? this.ensureField("peer ada", peerMsg.ada)
-				: undefined;
-			const peerAdbBytes = hasPeerAdb
-				? this.ensureField("peer adb", peerMsg.adb)
-				: undefined;
+			const peerAdaBytes = this.ensureField("peer ada", peerMsg.ada);
+			const peerAdbBytes = this.ensureField("peer adb", peerMsg.adb);
 			if (peerAdaBytes && peerAdbBytes) {
 				this.reportInputInvalid(
 					"peer.ada/peer.adb",
@@ -460,26 +393,47 @@ export class CPaceSession {
 	private ensureField(
 		field: string,
 		value: Uint8Array | undefined,
+	): Uint8Array | undefined;
+	private ensureField(
+		field: string,
+		value: Uint8Array | undefined,
+		options: EnsureBytesOptions & { optional: false },
+	): Uint8Array;
+	private ensureField(
+		field: string,
+		value: Uint8Array | undefined,
 		options?: EnsureBytesOptions,
-	): Uint8Array {
-		try {
-			return ensureBytes(field, value, options);
-		} catch (err) {
+	): Uint8Array | undefined {
+		if (value === undefined) {
+			if (options?.optional === false) {
+				return ensureFieldValidated(field, value, options, (err, ctx) => {
+					this.reportInputInvalid(
+						field,
+						err instanceof Error ? err.message : "validation failed",
+						{
+							expected: extractExpected(ctx.options),
+							actual: "undefined",
+						},
+					);
+				});
+			}
+			return undefined;
+		}
+		return ensureFieldValidated(field, value, options, (err, ctx) => {
 			this.reportInputInvalid(
 				field,
 				err instanceof Error ? err.message : "validation failed",
 				{
-					expected: extractExpected(options),
+					expected: extractExpected(ctx.options),
 					actual:
-						value instanceof Uint8Array
-							? value.length
-							: value === undefined
+						ctx.value instanceof Uint8Array
+							? ctx.value.length
+							: ctx.value === undefined
 								? "undefined"
 								: null,
 				},
 			);
-			throw err;
-		}
+		});
 	}
 
 	private reportInputInvalid(
@@ -500,60 +454,8 @@ export class CPaceSession {
 		level: AuditLevel,
 		data?: Record<string, unknown>,
 	): void {
-		if (!this.auditLogger) return;
-		const cleaned = cleanObject(data);
-		const event: AuditEvent = {
-			ts: new Date().toISOString(),
-			sessionId: this.sessionId,
-			level,
-			code,
-			...(cleaned ? { data: cleaned } : {}),
-		};
-		void this.auditLogger.audit(event);
+		emitAuditEvent(this.auditLogger, this.sessionId, code, level, data);
 	}
-}
-
-function cleanObject(
-	data?: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-	if (!data) return undefined;
-	const cleaned: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(data)) {
-		if (value === undefined) continue;
-		cleaned[key] = value;
-	}
-	return cleaned;
-}
-
-type ExpectedRange = {
-	min?: number;
-	max?: number;
-};
-
-function extractExpected(
-	options?: EnsureBytesOptions,
-): ExpectedRange | undefined {
-	if (!options) return undefined;
-	const expected: ExpectedRange = {};
-	if (options.minLength !== undefined) expected.min = options.minLength;
-	if (options.maxLength !== undefined) expected.max = options.maxLength;
-	return Object.keys(expected).length > 0 ? expected : undefined;
-}
-
-function generateSessionId(): string {
-	const length = 16;
-	const bytes = new Uint8Array(length);
-	if (
-		typeof globalThis.crypto !== "undefined" &&
-		typeof globalThis.crypto.getRandomValues === "function"
-	) {
-		globalThis.crypto.getRandomValues(bytes);
-	} else {
-		for (let i = 0; i < length; i += 1) {
-			bytes[i] = Math.floor(Math.random() * 256);
-		}
-	}
-	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function isLowOrderError(
