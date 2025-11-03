@@ -15,6 +15,18 @@ export interface AuditLogger {
 	audit(event: AuditEvent): void | Promise<void>;
 }
 
+export const AUDIT_CODES = Object.freeze({
+	CPACE_SESSION_CREATED: "CPACE_SESSION_CREATED",
+	CPACE_START_BEGIN: "CPACE_START_BEGIN",
+	CPACE_START_SENT: "CPACE_START_SENT",
+	CPACE_RX_RECEIVED: "CPACE_RX_RECEIVED",
+	CPACE_FINISH_BEGIN: "CPACE_FINISH_BEGIN",
+	CPACE_FINISH_OK: "CPACE_FINISH_OK",
+	CPACE_INPUT_INVALID: "CPACE_INPUT_INVALID",
+	CPACE_PEER_INVALID: "CPACE_PEER_INVALID",
+	CPACE_LOW_ORDER_POINT: "CPACE_LOW_ORDER_POINT",
+} as const);
+
 export function emitAuditEvent(
 	logger: AuditLogger | undefined,
 	sessionId: string,
