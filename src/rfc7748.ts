@@ -11,9 +11,9 @@ export function decodeLittleEndian(bytes: Uint8Array, bits: number): bigint {
 }
 
 // decodeUCoordinate(u, bits):
-// - копия из A.4 с маскированием лишних бит
+// - copy из A.4 с маскированием лишних бит
 export function decodeUCoordinate(u: Uint8Array, bits: number): bigint {
-	const arr = u.slice(); // копия
+	const arr = u.slice(); // copy
 	if (bits % 8) {
 		const last = arr.length - 1;
 		const mask = (1 << (bits % 8)) - 1;
@@ -25,7 +25,7 @@ export function decodeUCoordinate(u: Uint8Array, bits: number): bigint {
 }
 
 // encodeUCoordinate(u, bits):
-// возвращаем little-endian байты длиной (bits+7)/8
+// returning little-endian байты длиной (bits+7)/8
 export function encodeUCoordinate(u: bigint, bits: number): Uint8Array {
 	const len = Math.floor((bits + 7) / 8);
 	const out = new Uint8Array(len);

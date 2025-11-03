@@ -1,4 +1,16 @@
 {
+	"name": "cpace-ts",
+	"version": "0.1.0",
+	"description": "CPace for TypeScript",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/slava-nikulin/cpace-ts.git"
+	},
+	"license": "MIT",
+	"keywords": [
+		"cpace",
+		"pake"
+	],
 	"devDependencies": {
 		"@biomejs/biome": "2.3.2",
 		"@types/node": "^24.9.2",
@@ -28,16 +40,16 @@
 		"dist"
 	],
 	"scripts": {
-		"typecheck": "tsc -p tsconfig.json",
-		"build": "tsc -p tsconfig.build.json",
-		"test:typecheck": "tsc -p tsconfig.test.json",
+		"build": "pnpm clean && tsc -p tsconfig.build.json",
 		"dev": "tsup --watch",
-		"prepublishOnly": "pnpm run build",
 		"lint:fix": "biome check --write --unsafe",
 		"lint": "biome check .",
+		"typecheck": "tsc -p tsconfig.json",
 		"test:unit": "vitest run --project unit",
 		"test:int": "vitest run --project integration",
-		"preflight": "./.husky/pre-push"
+		"preflight": "./.husky/pre-push",
+		"clean": "rimraf dist",
+		"test": "pnpm test:unit && pnpm test:int"
 	},
 	"dependencies": {
 		"@noble/curves": "^2.0.1"

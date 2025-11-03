@@ -31,7 +31,7 @@ function hexToBytesFixed(hex: string): Uint8Array {
 }
 
 function TC_G_X255_DSI(): Uint8Array {
-	// это реально просто b"CPace255"
+	// this is literally just b"CPace255"
 	return utf8("CPace255");
 }
 
@@ -40,18 +40,18 @@ describe("Appendix B.1.5 — ISK calculation (initiator/responder) — vectors",
 		// 1) generator_string sanity
 		const genStr = generatorString(TC_G_X255_DSI(), TC_PRS, TC_CI, TC_SID, 128);
 		expect(genStr.length).toBeGreaterThan(0);
-		// но в тестах дальше нам важен именно сам g через реализацию
+		// but in the tests below we care about the actual g через реализацию
 		const g = await G_X25519.calculateGenerator(sha512, TC_PRS, TC_CI, TC_SID);
-		// сверяемся с вектором
+		// compare with вектором
 		expect(bytesToHex(g)).toBe(
 			"64e8099e3ea682cfdc5cb665c057ebb514d06bf23ebc9f743b51b82242327074",
 		);
 
-		// 2) публичные точки — СРАЗУ берем из векторов
+		// 2) public points — take directly from vectors
 		const Ya = TC_YA;
 		const Yb = TC_YB;
 
-		// 3) общий секрет — тоже из вектора, но проверим что мы его так же считаем
+		// 3) shared secret — also from vector, but ensure we compute the same
 		const K1 = await G_X25519.scalarMultVfy(
 			hexToBytesFixed(
 				"21b4f4bd9e64ed355c3eb676a28ebedaf6d8f17bdc365995b319097153044080",
@@ -77,7 +77,7 @@ describe("Appendix B.1.5 — ISK calculation (initiator/responder) — vectors",
 		const dsiIsk = utf8("CPace255_ISK");
 		const header = lvCat(dsiIsk, TC_SID, TC_K);
 
-		// 6) финальный материал и хеш
+		// 6) final material and hash
 		const material = concat([header, tr]);
 		const isk = await sha512(material);
 

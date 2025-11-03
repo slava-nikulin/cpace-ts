@@ -26,7 +26,7 @@ export interface GroupEnv {
 	deserialize(buf: Uint8Array): Uint8Array;
 }
 
-// общий helper
+// general helper
 function getRandomBytes(len: number): Uint8Array {
 	const out = new Uint8Array(len);
 	if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
@@ -38,12 +38,12 @@ function getRandomBytes(len: number): Uint8Array {
 	return out;
 }
 
-// общий x25519 wrapper — одна точка входа
+// general x25519 wrapper — single entry point
 async function x25519(
 	scalar: Uint8Array,
 	point: Uint8Array,
 ): Promise<Uint8Array> {
-	// сейчас — через WebCrypto
+	// currently powered by WebCrypto
 	return x25519Webcrypto(scalar, point);
 }
 
@@ -75,10 +75,10 @@ export class X25519Group implements GroupEnv {
 	readonly name = "X25519";
 	readonly fieldSizeBytes = 32;
 	readonly fieldSizeBits = 255;
-	// для SHA-512 (128 байт блок)
+	// for SHA-512 (128 byte block)
 	readonly sInBytes = 128;
 	readonly DSI = utf8("CPace255");
-	// нейтральный элемент (0^32)
+	// neutral element (0^32)
 	readonly I = new Uint8Array(32);
 
 	async calculateGenerator(

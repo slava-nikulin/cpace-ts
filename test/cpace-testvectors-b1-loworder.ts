@@ -1,6 +1,6 @@
 // test/cpace-testvectors-b1-loworder.ts
 
-// маленький локальный хелпер, чтобы не тащить из src
+// small local helper to avoid importing from src
 export function hexToBytes(hex: string): Uint8Array {
 	const clean = hex.trim().toLowerCase();
 	const out = new Uint8Array(clean.length / 2);
