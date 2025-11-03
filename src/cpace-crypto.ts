@@ -6,6 +6,9 @@ import { concat, lvCat, utf8 } from "./cpace-strings";
 
 const EMPTY = new Uint8Array(0);
 
+/**
+ * @internal Generate this party's CPace element and serialized message payload.
+ */
 export async function computeLocalElement(
 	suite: CPaceSuiteDesc,
 	prs: Uint8Array,
@@ -24,6 +27,10 @@ export async function computeLocalElement(
 	return { scalar, serialized };
 }
 
+/**
+ * @internal Derive the shared secret from the peer's message or throw if invalid.
+ * @throws InvalidPeerElementError when deserialization or scalar multiplication fails.
+ */
 export async function deriveSharedSecretOrThrow(
 	suite: CPaceSuiteDesc,
 	ephemeralScalar: Uint8Array,
@@ -69,6 +76,9 @@ export async function deriveSharedSecretOrThrow(
 	return sharedSecret;
 }
 
+/**
+ * @internal Obtain the session key material and sid output from transcript data.
+ */
 export async function deriveIskAndSid(
 	suite: CPaceSuiteDesc,
 	transcript: Uint8Array,

@@ -1,6 +1,9 @@
 import { InvalidPeerElementError } from "./cpace-errors";
 import type { CPaceMessage, CPaceMode, CPaceSuiteDesc } from "./cpace-session";
 
+/**
+ * @internal Assemble the outbound CPace message for the given mode.
+ */
 export function buildOutboundMessage(
 	mode: CPaceMode,
 	payload: Uint8Array,
@@ -17,6 +20,10 @@ export function buildOutboundMessage(
 	return message;
 }
 
+/**
+ * @internal Validate and normalise a received CPace message.
+ * @throws InvalidPeerElementError when the payload is malformed.
+ */
 export function validateAndSanitizePeerMessage(
 	suite: CPaceSuiteDesc,
 	msg: CPaceMessage,

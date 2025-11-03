@@ -2,6 +2,9 @@ import { transcriptIr, transcriptOc } from "./cpace-strings";
 
 const EMPTY = new Uint8Array(0);
 
+/**
+ * @internal Construct the initiator-responder transcript in IR order.
+ */
 export function makeTranscriptIR(
 	role: "initiator" | "responder",
 	localMsg: Uint8Array,
@@ -16,6 +19,9 @@ export function makeTranscriptIR(
 		: transcriptIr(peerPayload, peerAda ?? EMPTY, localMsg, localAdb ?? EMPTY);
 }
 
+/**
+ * @internal Construct the symmetric-mode transcript using ordered concatenation.
+ */
 export function makeTranscriptOC(
 	localMsg: Uint8Array,
 	localAd: Uint8Array,
