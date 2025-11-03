@@ -1,19 +1,6 @@
-import { compareBytes } from "./bytes";
 import type { AuditLevel, AuditLogger } from "./cpace-audit";
 import { AUDIT_CODES, emitAuditEvent } from "./cpace-audit";
-import {
-	type GroupEnv,
-	LowOrderPointError,
-	type LowOrderPointReason,
-} from "./cpace-group-x25519";
-import {
-	concat,
-	lvCat,
-	transcriptIr,
-	transcriptOc,
-	utf8,
-} from "./cpace-strings";
-const EMPTY = new Uint8Array(0);
+import { type GroupEnv } from "./cpace-group-x25519";
 import {
 	cleanObject,
 	type EnsureBytesOptions,
@@ -22,9 +9,22 @@ import {
 	generateSessionId,
 } from "./cpace-validation";
 import type { HashFn } from "./hash";
+import { buildOutboundMessage, validateAndSanitizePeerMessage } from "./cpace-message";
+import { makeTranscriptIR, makeTranscriptOC } from "./cpace-transcript";
+import {
+	computeLocalElement,
+	deriveIskAndSid,
+	deriveSharedSecretOrThrow,
+} from "./cpace-crypto";
+
+const EMPTY = new Uint8Array(0);
 
 export type { AuditEvent, AuditLevel, AuditLogger } from "./cpace-audit";
+export { InvalidPeerElementError } from "./cpace-errors";
 
+/**
+ * Description of the cryptographic suite used for CPace.
+ */
 export interface CPaceSuiteDesc {
 	name: string;
 	group: GroupEnv;
@@ -34,6 +34,9 @@ export interface CPaceSuiteDesc {
 export type CPaceMode = "initiator-responder" | "symmetric";
 export type Role = "initiator" | "responder" | "symmetric";
 
+/**
+ * All inputs required to initialize a CPace session.
+ */
 export type CPaceInputs = {
 	prs: Uint8Array;
 	suite: CPaceSuiteDesc;
@@ -45,21 +48,14 @@ export type CPaceInputs = {
 	sid?: Uint8Array;
 };
 
+/**
+ * Wire-format CPace message exchanged between peers.
+ */
 export interface CPaceMessage {
 	type: "msg";
 	payload: Uint8Array;
 	ada?: Uint8Array;
 	adb?: Uint8Array;
-}
-
-export class InvalidPeerElementError extends Error {
-	constructor(
-		message = "CPaceSession.finish: invalid peer element",
-		options?: ErrorOptions,
-	) {
-		super(message, options);
-		this.name = "InvalidPeerElementError";
-	}
 }
 
 export class CPaceSession {
@@ -114,14 +110,13 @@ export class CPaceSession {
 	async start(): Promise<CPaceMessage | undefined> {
 		const { suite, prs, ci, sid, ada, adb, role, mode } = this.inputs;
 
-		const normalizedPrs = this.ensureField("prs", prs, {
-			optional: false,
+		const normalizedPrs = this.ensureRequired("prs", prs, {
 			minLength: 1,
 		});
-		const normalizedCi = this.ensureField("ci", ci);
-		const normalizedSid = this.ensureField("sid", sid);
-		const normalizedAda = this.ensureField("ada", ada);
-		const normalizedAdb = this.ensureField("adb", adb);
+		const normalizedCi = this.ensureOptional("ci", ci);
+		const normalizedSid = this.ensureOptional("sid", sid);
+		const normalizedAda = this.ensureOptional("ada", ada);
+		const normalizedAdb = this.ensureOptional("adb", adb);
 
 		if (mode === "symmetric" && normalizedAda && normalizedAdb) {
 			this.reportInputInvalid(
@@ -138,43 +133,34 @@ export class CPaceSession {
 
 		this.emitAudit(AUDIT_CODES.CPACE_START_BEGIN, "info", { mode, role });
 
-		const pwdPoint = await suite.group.calculateGenerator(
-			suite.hash,
+	const { scalar: ephemeralScalar, serialized: localMsg } =
+		await computeLocalElement(
+			suite,
 			normalizedPrs,
-			normalizedCi ?? EMPTY,
-			normalizedSid ?? EMPTY,
+			normalizedCi,
+			normalizedSid,
 		);
-		const x = suite.group.sampleScalar();
-		const X = await suite.group.scalarMult(x, pwdPoint);
-
-		this.ephemeralScalar = x;
-		this.localMsg = suite.group.serialize(X);
+	this.ephemeralScalar = ephemeralScalar;
+	this.localMsg = localMsg;
 
 		if (mode === "initiator-responder" && role === "responder") {
 			return undefined;
 		}
 
-		const result: CPaceMessage = {
-			type: "msg",
-			payload: this.localMsg,
-		};
-		if (mode === "symmetric") {
-			if (normalizedAda) {
-				result.ada = normalizedAda;
-			} else if (normalizedAdb) {
-				result.adb = normalizedAdb;
-			}
-		} else if (normalizedAda) {
-			result.ada = normalizedAda;
-		}
+	const outbound = buildOutboundMessage(
+		mode,
+		this.localMsg,
+		normalizedAda,
+		normalizedAdb,
+	);
 
-		this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
-			payload_len: result.payload.length,
-			ada_present: Boolean(result.ada && result.ada.length > 0),
-			adb_present: Boolean(result.adb && result.adb.length > 0),
-		});
+	this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
+		payload_len: outbound.payload.length,
+		ada_present: Boolean(outbound.ada?.length),
+		adb_present: Boolean(outbound.adb?.length),
+	});
 
-		return result;
+	return outbound;
 	}
 
 	/**
@@ -187,65 +173,26 @@ export class CPaceSession {
 	async receive(msg: CPaceMessage): Promise<CPaceMessage | undefined> {
 		const { prs, sid, adb, role, mode, suite } = this.inputs;
 
-		this.ensureField("prs", prs, {
-			optional: false,
+		this.ensureRequired("prs", prs, {
 			minLength: 1,
 		});
-		const normalizedSid = this.ensureField("sid", sid);
-		const normalizedSessionAdb = this.ensureField("adb", adb);
+		const normalizedSid = this.ensureOptional("sid", sid);
+		const normalizedSessionAdb = this.ensureOptional("adb", adb);
 
-		if (!(msg.payload instanceof Uint8Array)) {
-			throw new InvalidPeerElementError(
-				"CPaceSession.receive: peer payload must be a Uint8Array",
-			);
-		}
-		const expectedPayloadLength = suite.group.fieldSizeBytes;
-		if (msg.payload.length !== expectedPayloadLength) {
-			this.reportInputInvalid("peer.payload", "invalid length", {
-				expected: expectedPayloadLength,
-				actual: msg.payload.length,
-			});
-			throw new InvalidPeerElementError(
-				`CPaceSession.receive: peer payload must be ${expectedPayloadLength} bytes`,
-			);
-		}
-		const payload = msg.payload;
+		const sanitizedPeerMsg = validateAndSanitizePeerMessage(
+			suite,
+			msg,
+			(field, value) => this.ensureOptional(field, value),
+			(field, reason, extra) => this.reportInputInvalid(field, reason, extra),
+		);
 
-		if (msg.ada !== undefined && msg.adb !== undefined) {
-			this.reportInputInvalid(
-				"peer.ada/peer.adb",
-				"peer message must not include both ada and adb",
-			);
-			throw new Error(
-				"CPaceSession.receive: peer message must not include both ada and adb",
-			);
-		}
-		const hasPeerAda = msg.ada !== undefined;
-		const hasPeerAdb = msg.adb !== undefined;
-		const peerAda = this.ensureField("peer ada", msg.ada);
-		const peerAdb = this.ensureField("peer adb", msg.adb);
+		await this.ensureResponderHasLocalMsg(mode, role);
 
-		if (
-			mode === "initiator-responder" &&
-			role === "responder" &&
-			!this.localMsg
-		) {
-			await this.start();
-		}
-
-		const sanitizedPeerMsg: CPaceMessage = { type: "msg", payload };
-		if (hasPeerAda && peerAda) sanitizedPeerMsg.ada = peerAda;
-		if (hasPeerAdb && peerAdb) sanitizedPeerMsg.adb = peerAdb;
-
-		this.emitAudit(AUDIT_CODES.CPACE_RX_RECEIVED, "info", {
-			payload_len: payload.length,
-			ada_present: Boolean(
-				sanitizedPeerMsg.ada && sanitizedPeerMsg.ada.length > 0,
-			),
-			adb_present: Boolean(
-				sanitizedPeerMsg.adb && sanitizedPeerMsg.adb.length > 0,
-			),
-		});
+	this.emitAudit(AUDIT_CODES.CPACE_RX_RECEIVED, "info", {
+		payload_len: sanitizedPeerMsg.payload.length,
+		ada_present: Boolean(sanitizedPeerMsg.ada?.length),
+		adb_present: Boolean(sanitizedPeerMsg.adb?.length),
+	});
 
 		this.iskValue = await this.finish(normalizedSid, sanitizedPeerMsg);
 
@@ -260,11 +207,11 @@ export class CPaceSession {
 			if (normalizedSessionAdb) {
 				response.adb = normalizedSessionAdb;
 			}
-			this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
-				payload_len: response.payload.length,
-				ada_present: false,
-				adb_present: Boolean(response.adb && response.adb.length > 0),
-			});
+		this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
+			payload_len: response.payload.length,
+			ada_present: false,
+			adb_present: Boolean(response.adb?.length),
+		});
 			return response;
 		}
 
@@ -278,81 +225,56 @@ export class CPaceSession {
 	 * @throws Error if the session has not successfully finished.
 	 */
 	exportISK(): Uint8Array {
-	if (!this.iskValue) throw new Error("CPaceSession: not finished");
-	return this.iskValue;
+		if (!this.iskValue) throw new Error("CPaceSession: not finished");
+		return this.iskValue.slice();
 	}
 
 	/**
 	 * Obtain the session identifier output negotiated during the handshake, if any.
 	 */
 	get sidOutput(): Uint8Array | undefined {
-		return this.sidValue;
+		return this.sidValue ? this.sidValue.slice() : undefined;
 	}
 
 	private async finish(
 		sid: Uint8Array | undefined,
 		peerMsg: CPaceMessage,
 	): Promise<Uint8Array> {
-	if (!this.ephemeralScalar || !this.localMsg) {
-		throw new Error("CPaceSession.finish: session not started");
-	}
+		if (!this.ephemeralScalar || !this.localMsg) {
+			throw new Error("CPaceSession.finish: session not started");
+		}
 
-	const { suite, mode, role, ada, adb } = this.inputs;
-		const normalizedAda = this.ensureField("ada", ada);
-		const normalizedAdb = this.ensureField("adb", adb);
+		const { suite, mode, role, ada, adb } = this.inputs;
+		const normalizedAda = this.ensureOptional("ada", ada);
+		const normalizedAdb = this.ensureOptional("adb", adb);
 
 		this.emitAudit(AUDIT_CODES.CPACE_FINISH_BEGIN, "info", { mode, role });
 
-		let peerPoint: Uint8Array;
-		try {
-			peerPoint = suite.group.deserialize(peerMsg.payload);
-		} catch (err) {
-			this.emitAudit(AUDIT_CODES.CPACE_PEER_INVALID, "error", {
-				error: err instanceof Error ? (err.name ?? "Error") : "UnknownError",
-				message: err instanceof Error ? err.message : undefined,
-			});
-			throw new InvalidPeerElementError(undefined, {
-				cause: err instanceof Error ? err : undefined,
-			});
-		}
-
-		let k: Uint8Array;
-		try {
-			k = await suite.group.scalarMultVfy(this.ephemeralScalar, peerPoint);
-		} catch (err) {
-			if (isLowOrderError(err, "low-order")) {
-				this.emitAudit(AUDIT_CODES.CPACE_LOW_ORDER_POINT, "security", {});
-			} else {
+		const sharedSecret = await deriveSharedSecretOrThrow(
+			suite,
+			this.ephemeralScalar,
+			peerMsg.payload,
+			(errorName, message) => {
 				this.emitAudit(AUDIT_CODES.CPACE_PEER_INVALID, "error", {
-					error: err instanceof Error ? (err.name ?? "Error") : "UnknownError",
-					message: err instanceof Error ? err.message : undefined,
+					error: errorName,
+					message,
 				});
-			}
-			throw new InvalidPeerElementError(undefined, {
-				cause: err instanceof Error ? err : undefined,
-			});
-		}
-
-		if (compareBytes(k, suite.group.I) === 0) {
-			this.emitAudit(AUDIT_CODES.CPACE_LOW_ORDER_POINT, "security", {});
-			throw new InvalidPeerElementError();
-		}
+			},
+			() => {
+				this.emitAudit(AUDIT_CODES.CPACE_LOW_ORDER_POINT, "security", {});
+			},
+		);
 
 		let transcript: Uint8Array;
 		if (mode === "initiator-responder") {
-			transcript =
-				role === "initiator"
-			? transcriptIr(
+			transcript = makeTranscriptIR(
+				role as Exclude<Role, "symmetric">,
 				this.localMsg,
-				normalizedAda ?? EMPTY,
+				normalizedAda,
+				normalizedAdb,
 				peerMsg.payload,
-				peerMsg.adb ?? EMPTY,
-			)
-			: transcriptIr(
-				peerMsg.payload,
-				peerMsg.ada ?? EMPTY,
-				this.localMsg,
-				normalizedAdb ?? EMPTY,
+				peerMsg.ada,
+				peerMsg.adb,
 			);
 		} else {
 			const { localAd, remoteAd } = this.selectSymmetricAssociatedData(
@@ -361,43 +283,32 @@ export class CPaceSession {
 				normalizedAdb,
 				peerMsg,
 			);
-		transcript = transcriptOc(
-			this.localMsg,
-			localAd,
-			peerMsg.payload,
+			transcript = makeTranscriptOC(
+				this.localMsg,
+				localAd,
+				peerMsg.payload,
 				remoteAd,
 			);
 		}
 
-		const dsiIsk = concat([suite.group.DSI, utf8("_ISK")]);
-		const sidBytes = sid ?? EMPTY;
-		const lvPart = lvCat(dsiIsk, sidBytes, k);
-		const keyMaterial = concat([lvPart, transcript]);
-		const isk = await suite.hash(keyMaterial);
-
-		if (sid && sid.length > 0) {
-			this.sidValue = sid.slice();
-		} else {
-			const sidOutFull = await suite.hash(
-				concat([utf8("CPaceSidOutput"), transcript]),
-			);
-			this.sidValue = sidOutFull.slice(0, 16);
-		}
-
-		if (this.ephemeralScalar) {
-			this.ephemeralScalar.fill(0);
-			this.ephemeralScalar = undefined;
-		}
-		k.fill(0);
+		const { isk, sidValue } = await deriveIskAndSid(
+			suite,
+			transcript,
+			sharedSecret,
+			sid,
+		);
+		this.sidValue = sidValue;
+		this.zeroizeSecrets(sharedSecret);
 
 		this.emitAudit(AUDIT_CODES.CPACE_FINISH_OK, "info", {
 			transcript_type: mode === "initiator-responder" ? "ir" : "oc",
-			sid_provided: Boolean(sid && sid.length > 0),
+			sid_provided: Boolean(sid?.length),
 		});
 
 		return isk;
 	}
 
+	/** @internal */
 	private selectSymmetricAssociatedData(
 		mode: CPaceMode,
 		normalizedAda: Uint8Array | undefined,
@@ -414,8 +325,8 @@ export class CPaceSession {
 				"CPaceSession.finish: symmetric mode expects a single associated data source",
 			);
 		}
-		const peerAdaBytes = this.ensureField("peer ada", peerMsg.ada);
-		const peerAdbBytes = this.ensureField("peer adb", peerMsg.adb);
+		const peerAdaBytes = this.ensureOptional("peer ada", peerMsg.ada);
+		const peerAdbBytes = this.ensureOptional("peer adb", peerMsg.adb);
 		if (peerAdaBytes && peerAdbBytes) {
 			this.reportInputInvalid(
 				"peer.ada/peer.adb",
@@ -430,77 +341,90 @@ export class CPaceSession {
 		return { localAd, remoteAd };
 	}
 
-	private ensureField(
-		field: string,
-		value: Uint8Array | undefined,
-	): Uint8Array | undefined;
-	private ensureField(
-		field: string,
-		value: Uint8Array | undefined,
-		options: EnsureBytesOptions & { optional: false },
-	): Uint8Array;
-	private ensureField(
+	/** @internal */
+	private async ensureResponderHasLocalMsg(
+		mode: CPaceMode,
+		role: Role,
+	): Promise<void> {
+		if (mode === "initiator-responder" && role === "responder" && !this.localMsg) {
+			await this.start();
+		}
+	}
+
+	/** @internal */
+	private zeroizeSecrets(...buffers: Uint8Array[]): void {
+		if (this.ephemeralScalar) {
+			this.ephemeralScalar.fill(0);
+			this.ephemeralScalar = undefined;
+		}
+		for (const buffer of buffers) {
+			buffer.fill(0);
+		}
+	}
+
+	private ensureRequired(
 		field: string,
 		value: Uint8Array | undefined,
 		options?: EnsureBytesOptions,
-	): Uint8Array | undefined {
-		if (value === undefined) {
-			if (options?.optional === false) {
-				return ensureFieldValidated(field, value, options, (err, ctx) => {
-					this.reportInputInvalid(
-						field,
-						err instanceof Error ? err.message : "validation failed",
-						{
-							expected: extractExpected(ctx.options),
-							actual: "undefined",
-						},
-					);
-				});
-			}
-			return undefined;
-		}
-		return ensureFieldValidated(field, value, options, (err, ctx) => {
+	): Uint8Array {
+		const enforcedOptions: EnsureBytesOptions = { ...options, optional: false };
+		return ensureFieldValidated(field, value, enforcedOptions, (err, ctx) => {
 			this.reportInputInvalid(
 				field,
 				err instanceof Error ? err.message : "validation failed",
-				{
-					expected: extractExpected(ctx.options),
-					actual:
-						ctx.value instanceof Uint8Array
-							? ctx.value.length
-							: ctx.value === undefined
-								? "undefined"
-								: null,
-				},
+				this.buildValidationAuditExtra(ctx),
 			);
 		});
 	}
 
-	private reportInputInvalid(
-		field: string,
-		reason: string,
-		extra?: Record<string, unknown>,
-	): void {
-		const extras = cleanObject(extra);
-		this.emitAudit(AUDIT_CODES.CPACE_INPUT_INVALID, "warn", {
+private ensureOptional(
+	field: string,
+	value: Uint8Array | undefined,
+	options?: EnsureBytesOptions,
+): Uint8Array | undefined {
+	if (value === undefined) return undefined;
+	return ensureFieldValidated(field, value, options, (err, ctx) => {
+		this.reportInputInvalid(
 			field,
-			reason,
-			...(extras ?? {}),
-		});
-	}
-
-	private emitAudit(
-		code: string,
-		level: AuditLevel,
-		data?: Record<string, unknown>,
-	): void {
-		emitAuditEvent(this.auditLogger, this.sessionId, code, level, data);
-	}
+			err instanceof Error ? err.message : "validation failed",
+			this.buildValidationAuditExtra(ctx),
+		);
+	});
 }
 
-function isLowOrderError(
-	err: unknown,
-	reason: LowOrderPointReason,
-): err is LowOrderPointError {
-	return err instanceof LowOrderPointError && err.reason === reason;
+private buildValidationAuditExtra(ctx: {
+	options?: EnsureBytesOptions;
+	value: Uint8Array | undefined;
+}): { expected?: ReturnType<typeof extractExpected>; actual: number | "undefined" | null } {
+	return {
+		expected: extractExpected(ctx.options),
+		actual:
+			ctx.value instanceof Uint8Array
+				? ctx.value.length
+				: ctx.value === undefined
+					? "undefined"
+					: null,
+	};
+}
+
+private reportInputInvalid(
+	field: string,
+	reason: string,
+	extra?: Record<string, unknown>,
+): void {
+	const extras = cleanObject(extra);
+	this.emitAudit(AUDIT_CODES.CPACE_INPUT_INVALID, "warn", {
+		field,
+		reason,
+		...(extras ?? {}),
+	});
+}
+
+private emitAudit(
+	code: string,
+	level: AuditLevel,
+	data?: Record<string, unknown>,
+): void {
+	emitAuditEvent(this.auditLogger, this.sessionId, code, level, data);
+}
 }
