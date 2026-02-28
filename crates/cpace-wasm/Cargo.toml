@@ -1,0 +1,12 @@
+[package]
+name = "cpace-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+cpace-core = { path = "../cpace-core" }
+curve25519-elligator2 = { git = "https://github.com/slava-nikulin/curve25519-dalek.git", rev = "0487e30a2697c0a3730a266c5988b8b1e23e5887", features = ["elligator2"] }

@@ -6,5 +6,13 @@ export default defineConfig({
 	dts: true,
 	sourcemap: true,
 	clean: true,
+
+	// “ES2025” практично = esnext (самый новый таргет у esbuild/tsup)
 	target: "esnext",
+
+	// Чтобы вообще не было чанков/внутренних импортов
+	splitting: false,
+
+	platform: "node",
+	external: ["../wasm/pkg/cpace_wasm.js"],
 });

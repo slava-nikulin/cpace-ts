@@ -1,3 +1,10 @@
-export * from "./cpace-session";
-export * from "./crypto-backend";
-export * from "./derive-keys";
+export { InvalidPeerElementError } from "./cpace-errors";
+export { G_X25519 } from "./cpace-group-x25519";
+export {
+	type CPaceInputs,
+	type CPaceMessage,
+	type CPaceMode,
+	type CPaceRole,
+	CPaceSession,
+} from "./cpace-session";
+export { sha512 } from "./hash";

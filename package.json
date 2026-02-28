@@ -1,10 +1,21 @@
 {
+	"name": "cpace-ts",
+	"version": "0.1.0",
+	"description": "CPace for TypeScript",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/slava-nikulin/cpace-ts.git"
+	},
+	"license": "MIT",
+	"keywords": [
+		"cpace",
+		"pake"
+	],
 	"devDependencies": {
 		"@biomejs/biome": "2.3.2",
 		"@types/node": "^24.9.2",
-		"@typescript-eslint/eslint-plugin": "^8.46.2",
 		"@typescript-eslint/parser": "^8.46.2",
-		"eslint": "^9.38.0",
+		"rimraf": "^6.1.0",
 		"ts-node": "^10.9.2",
 		"tsup": "^8.5.0",
 		"typescript": "^5.9.3",
@@ -16,24 +27,33 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
-			"import": {
-				"types": "./dist/index.d.ts",
-				"default": "./dist/index.js"
-			},
-			"require": {
-				"types": "./dist/index.d.cts",
-				"default": "./dist/index.cjs"
-			}
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"require": "./dist/index.cjs"
+		},
+		"./wasm": {
+			"types": "./wasm/pkg/cpace_wasm.d.ts",
+			"import": "./wasm/pkg/cpace_wasm.js"
 		}
 	},
 	"files": [
-		"dist"
+		"dist/**",
+		"wasm/pkg/**",
+		"README.md",
+		"LICENSE"
 	],
 	"scripts": {
-		"build": "tsup",
+		"prepack": "pnpm build",
+		"build": "pnpm clean && pnpm build:wasm && tsup",
+		"build:wasm": "wasm-pack build crates/cpace-wasm --target web --release --out-dir ../../wasm/pkg",
 		"dev": "tsup --watch",
-		"prepublishOnly": "pnpm run build",
-		"lint:fix": "biome check --write --unsafe",
-		"typecheck": "tsc -b"
+		"typecheck": "tsc -p tsconfig.json",
+		"clean": "rimraf dist",
+		"test:unit": "vitest run --project unit",
+		"test:int": "vitest run --project integration",
+		"test": "pnpm test:unit && pnpm test:int"
+	},
+	"dependencies": {
+		"@noble/curves": "^2.0.1"
 	}
 }
