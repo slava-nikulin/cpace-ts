@@ -76,4 +76,29 @@ export async function receive(
 export function exportISK(s: CPaceSession): Uint8Array {
   return s.exportISK();
 }
+<<<<<<< HEAD
 ```
+=======
+
+async function runFullHandshake() {
+  const prs = new Uint8Array([...]); // Pre-shared secret
+
+  // Setup both parties
+  const initiator = newSession('initiator', prs);
+  const responder = newSession('responder', prs);
+
+  // 1. Initiator starts and sends message to Responder
+  const msg1 = await start(initiator);
+
+  // 2. Responder receives message and sends a reply
+  const msg2 = await receive(responder, msg1);
+
+  // 3. Initiator receives the reply
+  await receive(initiator, msg2);
+
+  // Handshake complete, keys can be exported
+  const initiatorKey = exportISK(initiator);
+  const responderKey = exportISK(responder);
+}
+```
+>>>>>>> f9671ed (chore: publish)
