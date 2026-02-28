@@ -27,14 +27,14 @@ describe("CPace sidOutput when no input sid", () => {
 				suite,
 				mode: "initiator-responder",
 				role: "initiator",
-				ada,
+				ad: ada,
 			});
 			const B = new CPaceSession({
 				prs,
 				suite,
 				mode: "initiator-responder",
 				role: "responder",
-				adb,
+				ad: adb,
 			});
 
 			const m1 = await A.start();
@@ -50,12 +50,12 @@ describe("CPace sidOutput when no input sid", () => {
 			// В реализации ты берёшь первые 16 байт ISK в качестве sidValue,
 			// но стандартный sidOut — хеш с префиксом "CPaceSidOut".
 			// Мы проверим равенство первых 16 байт твоего sidValue и ref-хеша.
-			const ref16 = new Uint8Array(sidOutRef.slice(0, 16));
+			const ref = new Uint8Array(sidOutRef);
 			expect(bytesToHex(expectDefined(A.sidOutput, "A sidOutput"))).toBe(
-				bytesToHex(ref16),
+				bytesToHex(ref),
 			);
 			expect(bytesToHex(expectDefined(B.sidOutput, "B sidOutput"))).toBe(
-				bytesToHex(ref16),
+				bytesToHex(ref),
 			);
 		},
 	);
@@ -89,13 +89,13 @@ describe("CPace sidOutput when no input sid", () => {
 				new Uint8Array(0),
 			);
 			const sidOutRef = await sha512(concat([utf8("CPaceSidOutput"), tOC]));
-			const ref16 = new Uint8Array(sidOutRef.slice(0, 16));
+			const ref = new Uint8Array(sidOutRef);
 
 			expect(bytesToHex(expectDefined(A.sidOutput, "A sidOutput"))).toBe(
-				bytesToHex(ref16),
+				bytesToHex(ref),
 			);
 			expect(bytesToHex(expectDefined(B.sidOutput, "B sidOutput"))).toBe(
-				bytesToHex(ref16),
+				bytesToHex(ref),
 			);
 		},
 	);

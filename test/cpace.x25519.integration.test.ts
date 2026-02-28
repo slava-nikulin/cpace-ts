@@ -33,7 +33,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: utf8("ADa"),
+			ad: utf8("ADa"),
 		});
 		const b = new CPaceSession({
 			prs,
@@ -42,7 +42,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: utf8("ADb"),
+			ad: utf8("ADb"),
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -56,10 +56,8 @@ describe("CPace integration — X25519+SHA-512", () => {
 		const iskB = b.exportISK();
 		expect(bytesToHex(iskA)).toBe(bytesToHex(iskB));
 		// раз sid задан, sidOutput должен дублировать его
-		const aSid = expectDefined(a.sidOutput, "initiator sidOutput");
-		const bSid = expectDefined(b.sidOutput, "responder sidOutput");
-		expect(bytesToHex(aSid)).toBe(bytesToHex(sid));
-		expect(bytesToHex(bSid)).toBe(bytesToHex(sid));
+		expect(a.sidOutput).toBe(undefined);
+		expect(b.sidOutput).toBe(undefined);
 	});
 
 	it("Symmetric happy path (unordered, оба шлют/получают): ISK совпадает, и отличается от IR-режима", async () => {
@@ -76,7 +74,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			ada,
+			ad: ada,
 		});
 		const q = new CPaceSession({
 			prs,
@@ -85,7 +83,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			adb,
+			ad: adb,
 		});
 
 		const pm = expectDefined(await p.start(), "P start message");
@@ -146,7 +144,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada,
+			ad: ada,
 		});
 		const b = new CPaceSession({
 			prs: utf8("secret-2"),
@@ -155,7 +153,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb,
+			ad: adb,
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -179,7 +177,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci: utf8("CI-1"),
 			sid,
-			ada: utf8("ADa"),
+			ad: utf8("ADa"),
 		});
 		const b = new CPaceSession({
 			prs,
@@ -188,7 +186,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci: utf8("CI-2"),
 			sid,
-			adb: utf8("ADb"),
+			ad: utf8("ADb"),
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -212,7 +210,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid: utf8("SID-1"),
-			ada: utf8("ADa"),
+			ad: utf8("ADa"),
 		});
 		const b = new CPaceSession({
 			prs,
@@ -221,7 +219,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid: utf8("SID-2"),
-			adb: utf8("ADb"),
+			ad: utf8("ADb"),
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -246,7 +244,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: utf8("ADa-v1"),
+			ad: utf8("ADa-v1"),
 		});
 		const b = new CPaceSession({
 			prs,
@@ -255,7 +253,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: utf8("ADb"),
+			ad: utf8("ADb"),
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -275,7 +273,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: utf8("ADa-v2"),
+			ad: utf8("ADa-v2"),
 		});
 		const b2 = new CPaceSession({
 			prs,
@@ -284,7 +282,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: utf8("ADb"),
+			ad: utf8("ADb"),
 		});
 
 		const a2Msg = expectDefined(
@@ -311,7 +309,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			mode: "initiator-responder",
 			role: "initiator",
 			ci,
-			ada: utf8("ADa"),
+			ad: utf8("ADa"),
 		});
 
 		await a.start();
@@ -319,7 +317,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		// Подмена ответа: вместо реального Yb кидаем low-order u=0^32
 		const fakeLowOrder = new Uint8Array(32); // u0 из векторов
 		await expect(async () => {
-			await a.receive({ type: "msg", payload: fakeLowOrder, adb: utf8("ADb") });
+			await a.receive({ type: "msg", payload: fakeLowOrder, ad: utf8("ADb") });
 		}).rejects.toThrow(/invalid peer element/i);
 	});
 
@@ -338,7 +336,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: ADa,
+			ad: ADa,
 		});
 		const B = new CPaceSession({
 			prs,
@@ -347,7 +345,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: ADb,
+			ad: ADb,
 		});
 		const Am = expectDefined(await A.start(), "initiator handshake message");
 		const Bm = expectDefined(
@@ -365,7 +363,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			ada: ADa,
+			ad: ADa,
 		});
 		const Q = new CPaceSession({
 			prs,
@@ -374,7 +372,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "symmetric",
 			ci,
 			sid,
-			adb: ADb,
+			ad: ADb,
 		});
 		const Pm = expectDefined(await P.start(), "symmetric P message");
 		const Qm = expectDefined(await Q.start(), "symmetric Q message");
@@ -421,7 +419,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: ADa,
+			ad: ADa,
 		});
 		const B1 = new CPaceSession({
 			prs,
@@ -430,7 +428,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: ADb,
+			ad: ADb,
 		});
 		const A1m = expectDefined(await A1.start(), "A1 start message");
 		const B1m = expectDefined(await B1.receive(A1m), "B1 response message");
@@ -445,7 +443,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "responder",
 			ci,
 			sid,
-			adb: ADb,
+			ad: ADb,
 		});
 		const B2 = new CPaceSession({
 			prs,
@@ -454,7 +452,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 			role: "initiator",
 			ci,
 			sid,
-			ada: ADa,
+			ad: ADa,
 		});
 		const B2m = expectDefined(await B2.start(), "B2 start message");
 		const A2m = expectDefined(await A2.receive(B2m), "A2 response message");

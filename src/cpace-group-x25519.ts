@@ -93,14 +93,32 @@ export class X25519Group implements GroupEnv {
 		ci?: Uint8Array,
 		sid?: Uint8Array,
 	): Promise<Uint8Array> {
+		// d18: gen_str = generator_string(G.DSI, PRS, CI, sid, H.s_in_bytes)
 		const genStr = generatorString(this.DSI, prs, ci, sid, this.sInBytes);
+
+		// d18: gen_str_hash = H.hash(gen_str, G.field_size_bytes)
 		const h = await hash(genStr);
 		if (h.length < this.fieldSizeBytes) {
 			throw new Error("X25519Group.calculateGenerator: hash output too short");
 		}
 		const genStrHash = h.slice(0, this.fieldSizeBytes);
-		const g = mapToCurveElligator2(genStrHash);
-		return this.serialize(g);
+
+		// d18: u = decodeUCoordinate(gen_str_hash, G.field_size_bits)
+		// For X25519 (255 bits): clear unused MSB (bit #255).
+		const lastIndex = this.fieldSizeBytes - 1;
+		const lastByte = genStrHash[lastIndex];
+		if (lastByte === undefined) {
+			throw new Error(
+				"X25519Group.calculateGenerator: invalid generator hash length",
+			);
+		}
+		genStrHash[lastIndex] = lastByte & 0x7f;
+
+		// d18: (g, v) = map_to_curve_elligator2(u); v discarded
+		// IMPORTANT (d18 §9.10): mapping MUST be constant-time.
+		const gU = await mapToCurveElligator2(genStrHash);
+
+		return this.serialize(gU);
 	}
 
 	sampleScalar(): Uint8Array {

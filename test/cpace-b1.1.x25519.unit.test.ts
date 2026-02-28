@@ -27,7 +27,7 @@ describe("Appendix B.1.1 — calculate_generator (X25519, SHA-512)", () => {
 		);
 
 		// 3) Elligator2 → g
-		const g = mapToCurveElligator2(h32);
+		const g = await mapToCurveElligator2(h32);
 		expect(bytesToHex(g)).toBe(bytesToHex(TC_G));
 	});
 });

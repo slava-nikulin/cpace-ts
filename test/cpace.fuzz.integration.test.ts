@@ -47,13 +47,11 @@ function suite() {
 	};
 }
 
-type SymmetricAd = { kind: "ada" | "adb"; value: Uint8Array };
+type SymmetricAd = Uint8Array;
 
 function randomSymmetricAd(maxLen: number): SymmetricAd | undefined {
 	if (Math.random() < 0.5) return undefined;
-	const value = randAscii((Math.random() * maxLen) | 0);
-	const kind: SymmetricAd["kind"] = Math.random() < 0.5 ? "ada" : "adb";
-	return { kind, value };
+	return randAscii((Math.random() * maxLen) | 0);
 }
 
 async function runCpaceIR(
@@ -71,7 +69,7 @@ async function runCpaceIR(
 		role: "initiator",
 		...(ci !== undefined ? { ci } : {}),
 		...(sid !== undefined ? { sid } : {}),
-		...(ADa !== undefined ? { ada: ADa } : {}),
+		...(ADa !== undefined ? { ad: ADa } : {}),
 	});
 	const responder = new CPaceSession({
 		prs,
@@ -80,7 +78,7 @@ async function runCpaceIR(
 		role: "responder",
 		...(ci !== undefined ? { ci } : {}),
 		...(sid !== undefined ? { sid } : {}),
-		...(ADb !== undefined ? { adb: ADb } : {}),
+		...(ADb !== undefined ? { ad: ADb } : {}),
 	});
 
 	const msgA = await initiator.start(); // инициатор шлёт
@@ -107,11 +105,7 @@ async function runCpaceOC(
 		role: "symmetric" as const,
 		...(ci !== undefined ? { ci } : {}),
 		...(sid !== undefined ? { sid } : {}),
-		...(ad === undefined
-			? {}
-			: ad.kind === "ada"
-				? { ada: ad.value }
-				: { adb: ad.value }),
+		...(ad !== undefined ? { ad } : {}),
 	});
 
 	const A = new CPaceSession(mkInputs(adA));
@@ -141,14 +135,14 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			expect(A.exportISK()).toEqual(B.exportISK());
 			// sidOutput policy:
 			if (sid && sid.length > 0) {
-				expect(A.sidOutput).toEqual(sid);
-				expect(B.sidOutput).toEqual(sid);
+				expect(A.sidOutput).toEqual(undefined);
+				expect(B.sidOutput).toEqual(undefined);
 			} else {
 				expect(expectDefined(A.sidOutput, "initiator sidOutput").length).toBe(
-					16,
+					64,
 				);
 				expect(expectDefined(B.sidOutput, "responder sidOutput").length).toBe(
-					16,
+					64,
 				);
 			}
 		}
@@ -223,14 +217,14 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			const { A, B } = await runCpaceOC(prs, ci, sid, adA, adB);
 			expect(A.exportISK()).toEqual(B.exportISK());
 			if (sid && sid.length > 0) {
-				expect(A.sidOutput).toEqual(sid);
-				expect(B.sidOutput).toEqual(sid);
+				expect(A.sidOutput).toEqual(undefined);
+				expect(B.sidOutput).toEqual(undefined);
 			} else {
 				expect(expectDefined(A.sidOutput, "symmetric sidOutput A").length).toBe(
-					16,
+					64,
 				);
 				expect(expectDefined(B.sidOutput, "symmetric sidOutput B").length).toBe(
-					16,
+					64,
 				);
 			}
 		}
@@ -273,31 +267,23 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			}
 			{
 				const mutatedAdA: SymmetricAd | undefined = adA
-					? { kind: adA.kind, value: mutateOneByte(adA.value) }
-					: { kind: "ada", value: randAscii(1) };
+					? mutateOneByte(adA)
+					: randAscii(1);
 				const { A } = await runCpaceOC(prs, ci, sid, mutatedAdA, adB);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
 			{
 				const mutatedAdB: SymmetricAd | undefined = adB
-					? { kind: adB.kind, value: mutateOneByte(adB.value) }
-					: { kind: "adb", value: randAscii(1) };
+					? mutateOneByte(adB)
+					: randAscii(1);
 				const { A } = await runCpaceOC(prs, ci, sid, adA, mutatedAdB);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
 			{
-				const swapKind = (ad: SymmetricAd): SymmetricAd => ({
-					kind: ad.kind === "ada" ? "adb" : "ada",
-					value: ad.value,
-				});
-				const swappedAdA: SymmetricAd =
-					adA === undefined
-						? { kind: "ada", value: randAscii(1) }
-						: swapKind(adA);
-				const swappedAdB: SymmetricAd =
-					adB === undefined
-						? { kind: "adb", value: randAscii(1) }
-						: swapKind(adB);
+				const swappedAdA: SymmetricAd | undefined =
+					adA === undefined ? randAscii(1) : undefined;
+				const swappedAdB: SymmetricAd | undefined =
+					adB === undefined ? randAscii(1) : undefined;
 				const { A } = await runCpaceOC(prs, ci, sid, swappedAdA, swappedAdB);
 				expect(A.exportISK()).not.toEqual(ref);
 			}

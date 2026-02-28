@@ -5,18 +5,17 @@ export function utf8(value: string): Uint8Array {
 }
 
 export function leb128Encode(n: number): Uint8Array {
+	if (!Number.isSafeInteger(n) || n < 0) {
+		throw new RangeError("leb128Encode: n must be a non-negative safe integer");
+	}
 	const bytes: number[] = [];
-	let v = n >>> 0;
+	let v = n;
 	while (true) {
-		if (v < 128) {
-			bytes.push(v);
-		} else {
-			bytes.push((v & 0x7f) + 0x80);
-		}
-		v = v >>> 7;
-		if (v === 0) {
-			break;
-		}
+		let byte = v & 0x7f;
+		v = Math.floor(v / 128);
+		if (v !== 0) byte |= 0x80;
+		bytes.push(byte);
+		if (v === 0) break;
 	}
 	return new Uint8Array(bytes);
 }

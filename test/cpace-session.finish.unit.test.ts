@@ -77,7 +77,11 @@ describe("CPaceSession.finish invalid peer handling", () => {
 		await session.start();
 
 		await expect(
-			session.receive({ type: "msg", payload: new Uint8Array(32) }),
+			session.receive({
+				type: "msg",
+				payload: new Uint8Array(32),
+				ad: new Uint8Array(0),
+			}),
 		).rejects.toBeInstanceOf(InvalidPeerElementError);
 	});
 
@@ -89,7 +93,11 @@ describe("CPaceSession.finish invalid peer handling", () => {
 		await session.start();
 
 		await expect(
-			session.receive({ type: "msg", payload: new Uint8Array(32) }),
+			session.receive({
+				type: "msg",
+				payload: new Uint8Array(32),
+				ad: new Uint8Array(0),
+			}),
 		).rejects.toBeInstanceOf(InvalidPeerElementError);
 	});
 
@@ -98,7 +106,11 @@ describe("CPaceSession.finish invalid peer handling", () => {
 		const session = createSessionWithGroup(group);
 
 		await session.start();
-		await session.receive({ type: "msg", payload: new Uint8Array(32) });
+		await session.receive({
+			type: "msg",
+			payload: new Uint8Array(32),
+			ad: new Uint8Array(0),
+		});
 
 		const isk = session.exportISK();
 		expect(isk.length).toBeGreaterThan(0);
@@ -110,7 +122,11 @@ describe("CPaceSession.finish invalid peer handling", () => {
 		const session = createSessionWithGroup(group);
 
 		await expect(
-			session.receive({ type: "msg", payload: new Uint8Array(32) }),
+			session.receive({
+				type: "msg",
+				payload: new Uint8Array(32),
+				ad: new Uint8Array(0),
+			}),
 		).rejects.toThrow("CPaceSession.finish: session not started");
 	});
 });

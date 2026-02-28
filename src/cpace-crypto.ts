@@ -84,22 +84,23 @@ export async function deriveIskAndSid(
 	transcript: Uint8Array,
 	sharedSecret: Uint8Array,
 	sid?: Uint8Array,
-): Promise<{ isk: Uint8Array; sidValue: Uint8Array }> {
+): Promise<{ isk: Uint8Array; sidOutput?: Uint8Array }> {
 	const dsiIsk = concat([suite.group.DSI, utf8("_ISK")]);
-	const sidBytes = sid ?? EMPTY;
-	const lvPart = lvCat(dsiIsk, sidBytes, sharedSecret);
-	const keyMaterial = concat([lvPart, transcript]);
-	const isk = await suite.hash(keyMaterial);
 
-	let sidValue: Uint8Array;
-	if (sid && sid.length > 0) {
-		sidValue = sid.slice();
-	} else {
-		const sidOutFull = await suite.hash(
+	// In CPace, sid is an input string. If not present, treat as empty string.
+	const sidBytes = sid ?? EMPTY;
+
+	// ISK = H.hash(lv_cat(DSI||"_ISK", sid, K) || transcript)
+	const lvPart = lvCat(dsiIsk, sidBytes, sharedSecret);
+	const isk = await suite.hash(concat([lvPart, transcript]));
+
+	// sid_output exists only for the "empty sid" run (Section 9.6)
+	if (sidBytes.length === 0) {
+		const sidOutput = await suite.hash(
 			concat([utf8("CPaceSidOutput"), transcript]),
 		);
-		sidValue = sidOutFull.slice(0, 16);
+		return { isk, sidOutput }; // full hash output (SHA-512 => 64 bytes)
 	}
 
-	return { isk, sidValue };
+	return { isk };
 }

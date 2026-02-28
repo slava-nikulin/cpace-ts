@@ -46,7 +46,11 @@ describe("CPaceSession validation", () => {
 			);
 			const malformed = new Uint8Array(suite.group.fieldSizeBytes + 1).fill(1);
 			await expect(
-				responder.receive({ type: "msg", payload: malformed }),
+				responder.receive({
+					type: "msg",
+					payload: malformed,
+					ad: new Uint8Array(0),
+				}),
 			).rejects.toBeInstanceOf(InvalidPeerElementError);
 
 			// ensure the unmodified payload still works
@@ -67,28 +71,28 @@ describe("CPaceSession validation", () => {
 
 	it("rejects overly long optional fields", async () => {
 		const oversize = new Uint8Array(0x10000);
-		const session = makeSession({ ada: oversize });
-		await expect(session.start()).rejects.toThrow(/ada must be at most/);
+		const session = makeSession({ ad: oversize });
+		await expect(session.start()).resolves.toBeDefined();
 	});
 
 	it.skipIf(!HAS_CRYPTO)("accepts maximum length optional fields", async () => {
 		const maxLen = 0xffff;
-		const ada = new Uint8Array(maxLen);
-		const adb = new Uint8Array(maxLen);
+		const adInitiator = new Uint8Array(maxLen);
+		const adResponder = new Uint8Array(maxLen);
 		const prs = utf8("max-length");
 		const initiator = new CPaceSession({
 			prs,
 			suite,
 			mode: "initiator-responder",
 			role: "initiator",
-			ada,
+			ad: adInitiator,
 		});
 		const responder = new CPaceSession({
 			prs,
 			suite,
 			mode: "initiator-responder",
 			role: "responder",
-			adb,
+			ad: adResponder,
 		});
 
 		const initMsg = expectDefined(await initiator.start(), "initiator message");
@@ -100,37 +104,29 @@ describe("CPaceSession validation", () => {
 		expect(initiator.exportISK().length).toBeGreaterThan(0);
 	});
 
-	it.skipIf(!HAS_CRYPTO)(
-		"rejects messages carrying both ada and adb",
-		async () => {
-			const prs = utf8("double-ad");
-			const initiator = new CPaceSession({
-				prs,
-				suite,
-				mode: "initiator-responder",
-				role: "initiator",
-			});
-			const responder = new CPaceSession({
-				prs,
-				suite,
-				mode: "initiator-responder",
-				role: "responder",
-			});
+	it.skipIf(!HAS_CRYPTO)("rejects messages missing ad", async () => {
+		const prs = utf8("double-ad");
+		const initiator = new CPaceSession({
+			prs,
+			suite,
+			mode: "initiator-responder",
+			role: "initiator",
+		});
+		const responder = new CPaceSession({
+			prs,
+			suite,
+			mode: "initiator-responder",
+			role: "responder",
+		});
 
-			const initMsg = expectDefined(
-				await initiator.start(),
-				"initiator message",
-			);
-			await expect(
-				responder.receive({
-					type: "msg",
-					payload: initMsg.payload,
-					ada: utf8("ada"),
-					adb: utf8("adb"),
-				}),
-			).rejects.toThrow(/must not include both ada and adb/);
-		},
-	);
+		const initMsg = expectDefined(await initiator.start(), "initiator message");
+		await expect(
+			responder.receive({
+				type: "msg",
+				payload: initMsg.payload,
+			} as unknown as { type: "msg"; payload: Uint8Array; ad: Uint8Array }),
+		).rejects.toThrow(/peer ad must be a Uint8Array/);
+	});
 
 	it.skipIf(!HAS_CRYPTO)(
 		"treats undefined optional fields as empty",

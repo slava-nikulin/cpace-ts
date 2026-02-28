@@ -19,14 +19,14 @@ describe("CPace binding — AD changes ISK", () => {
 				suite,
 				mode: "initiator-responder",
 				role: "initiator",
-				ada: utf8("ADa:v1"),
+				ad: utf8("ADa:v1"),
 			});
 			const B1 = new CPaceSession({
 				prs,
 				suite,
 				mode: "initiator-responder",
 				role: "responder",
-				adb: utf8("ADb:v1"),
+				ad: utf8("ADb:v1"),
 			});
 			const m1 = await A1.start();
 			const m2 = await B1.receive(expectDefined(m1, "A1 start message"));
@@ -39,14 +39,14 @@ describe("CPace binding — AD changes ISK", () => {
 				suite,
 				mode: "initiator-responder",
 				role: "initiator",
-				ada: utf8("ADa:v2"), // отличается
+				ad: utf8("ADa:v2"), // отличается
 			});
 			const B2 = new CPaceSession({
 				prs,
 				suite,
 				mode: "initiator-responder",
 				role: "responder",
-				adb: utf8("ADb:v1"),
+				ad: utf8("ADb:v1"),
 			});
 			const n1 = await A2.start();
 			const n2 = await B2.receive(expectDefined(n1, "A2 start message"));

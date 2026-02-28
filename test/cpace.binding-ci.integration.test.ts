@@ -25,7 +25,7 @@ describe("CPace binding — CI changes ISK", () => {
 				role: "initiator",
 				ci: utf8("CI:alpha"),
 				sid,
-				ada,
+				ad: ada,
 			});
 			const B1 = new CPaceSession({
 				prs,
@@ -34,7 +34,7 @@ describe("CPace binding — CI changes ISK", () => {
 				role: "responder",
 				ci: utf8("CI:alpha"),
 				sid,
-				adb,
+				ad: adb,
 			});
 			const m1 = await A1.start();
 			const m2 = await B1.receive(expectDefined(m1, "A1 start message"));
@@ -49,7 +49,7 @@ describe("CPace binding — CI changes ISK", () => {
 				role: "initiator",
 				ci: utf8("CI:beta"),
 				sid,
-				ada,
+				ad: ada,
 			});
 			const B2 = new CPaceSession({
 				prs,
@@ -58,7 +58,7 @@ describe("CPace binding — CI changes ISK", () => {
 				role: "responder",
 				ci: utf8("CI:beta"),
 				sid,
-				adb,
+				ad: adb,
 			});
 			const n1 = await A2.start();
 			const n2 = await B2.receive(expectDefined(n1, "A2 start message"));

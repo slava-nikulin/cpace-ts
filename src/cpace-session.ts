@@ -6,10 +6,7 @@ import {
 	deriveSharedSecretOrThrow,
 } from "./cpace-crypto";
 import type { GroupEnv } from "./cpace-group-x25519";
-import {
-	buildOutboundMessage,
-	validateAndSanitizePeerMessage,
-} from "./cpace-message";
+import { validateAndSanitizePeerMessage } from "./cpace-message";
 import { makeTranscriptIR, makeTranscriptOC } from "./cpace-transcript";
 import {
 	cleanObject,
@@ -45,21 +42,15 @@ export type CPaceInputs = {
 	suite: CPaceSuiteDesc;
 	mode: CPaceMode;
 	role: CPaceRole;
+	ad?: Uint8Array;
 	ci?: Uint8Array;
-	ada?: Uint8Array;
-	adb?: Uint8Array;
 	sid?: Uint8Array;
 };
 
 /**
  * Wire-format CPace message exchanged between peers.
  */
-export interface CPaceMessage {
-	type: "msg";
-	payload: Uint8Array;
-	ada?: Uint8Array;
-	adb?: Uint8Array;
-}
+export type CPaceMessage = { type: "msg"; payload: Uint8Array; ad: Uint8Array };
 
 export class CPaceSession {
 	private readonly auditLogger: AuditLogger | undefined;
@@ -82,25 +73,35 @@ export class CPaceSession {
 		const { audit, sessionId, ...inputs } = options;
 		this.auditLogger = audit;
 		this.sessionId = sessionId ?? generateSessionId();
-		this.inputs = inputs;
+
+		// normalize ad once
+		this.inputs = {
+			...inputs,
+			ad: inputs.ad ?? EMPTY,
+			ci: inputs.ci ?? EMPTY,
+			sid: inputs.sid ?? EMPTY,
+		};
+
+		const { mode, role, suite, ci, sid, ad } = this.inputs;
+
 		if (
-			(inputs.mode === "symmetric" && inputs.role !== "symmetric") ||
-			(inputs.mode === "initiator-responder" && inputs.role === "symmetric")
+			(mode === "symmetric" && role !== "symmetric") ||
+			(mode === "initiator-responder" && role === "symmetric")
 		) {
 			this.reportInputInvalid("role", "role must match selected mode", {
-				mode: inputs.mode,
-				role: inputs.role,
+				mode,
+				role,
 			});
 			throw new Error("CPaceSession: invalid mode/role combination");
 		}
+
 		this.emitAudit(AUDIT_CODES.CPACE_SESSION_CREATED, "info", {
-			mode: inputs.mode,
-			role: inputs.role,
-			suite: inputs.suite.name,
-			ci_len: inputs.ci?.length ?? 0,
-			sid_len: inputs.sid?.length ?? 0,
-			ada_len: inputs.ada?.length ?? 0,
-			adb_len: inputs.adb?.length ?? 0,
+			mode,
+			role,
+			suite: suite.name,
+			ci_len: ci?.length ?? 0,
+			sid_len: sid?.length ?? 0,
+			ad_len: ad?.length,
 		});
 	}
 
@@ -111,38 +112,18 @@ export class CPaceSession {
 	 * @throws Error if required inputs are missing or invalid.
 	 */
 	async start(): Promise<CPaceMessage | undefined> {
-		const { suite, prs, ci, sid, ada, adb, role, mode } = this.inputs;
+		const { suite, prs, ci, sid, ad, role, mode } = this.inputs;
 
-		const normalizedPrs = this.ensureRequired("prs", prs, {
-			minLength: 1,
-		});
-		const normalizedCi = this.ensureOptional("ci", ci);
-		const normalizedSid = this.ensureOptional("sid", sid);
-		const normalizedAda = this.ensureOptional("ada", ada);
-		const normalizedAdb = this.ensureOptional("adb", adb);
+		const normalizedPrs = this.ensureRequired("prs", prs, { minLength: 1 });
 
-		if (mode === "symmetric" && normalizedAda && normalizedAdb) {
-			this.reportInputInvalid(
-				"ada/adb",
-				"symmetric mode accepts either ada or adb",
-				{
-					mode,
-				},
-			);
-			throw new Error(
-				"CPaceSession.start: symmetric mode accepts either ada or adb, not both",
-			);
-		}
+		// ad is always defined if you normalized in ctor; allow empty
+		const normalizedAd = this.ensureRequired("ad", ad); // no minLength => empty ok
 
 		this.emitAudit(AUDIT_CODES.CPACE_START_BEGIN, "info", { mode, role });
 
 		const { scalar: ephemeralScalar, serialized: localMsg } =
-			await computeLocalElement(
-				suite,
-				normalizedPrs,
-				normalizedCi,
-				normalizedSid,
-			);
+			await computeLocalElement(suite, normalizedPrs, ci, sid);
+
 		this.ephemeralScalar = ephemeralScalar;
 		this.localMsg = localMsg;
 
@@ -150,22 +131,19 @@ export class CPaceSession {
 			return undefined;
 		}
 
-		const outbound = buildOutboundMessage(
-			mode,
-			this.localMsg,
-			normalizedAda,
-			normalizedAdb,
-		);
+		const outbound: CPaceMessage = {
+			type: "msg",
+			payload: this.localMsg,
+			ad: normalizedAd,
+		};
 
 		this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
 			payload_len: outbound.payload.length,
-			ada_present: Boolean(outbound.ada?.length),
-			adb_present: Boolean(outbound.adb?.length),
+			ad_len: outbound.ad.length,
 		});
 
 		return outbound;
 	}
-
 	/**
 	 * Consume a peer CPace message and, when required, return a response.
 	 *
@@ -174,18 +152,17 @@ export class CPaceSession {
 	 * @throws InvalidPeerElementError when peer inputs are malformed or low-order.
 	 */
 	async receive(msg: CPaceMessage): Promise<CPaceMessage | undefined> {
-		const { prs, sid, adb, role, mode, suite } = this.inputs;
+		const { prs, sid, ad, role, mode, suite } = this.inputs;
 
-		this.ensureRequired("prs", prs, {
-			minLength: 1,
-		});
-		const normalizedSid = this.ensureOptional("sid", sid);
-		const normalizedSessionAdb = this.ensureOptional("adb", adb);
+		this.ensureRequired("prs", prs, { minLength: 1 });
+
+		// local AD is required semantically, but empty is allowed
+		const localAd = this.ensureRequired("ad", ad); // no minLength => empty ok
 
 		const sanitizedPeerMsg = validateAndSanitizePeerMessage(
 			suite,
 			msg,
-			(field, value) => this.ensureOptional(field, value),
+			(field, value) => this.ensureRequired(field, value),
 			(field, reason, extra) => this.reportInputInvalid(field, reason, extra),
 		);
 
@@ -193,12 +170,12 @@ export class CPaceSession {
 
 		this.emitAudit(AUDIT_CODES.CPACE_RX_RECEIVED, "info", {
 			payload_len: sanitizedPeerMsg.payload.length,
-			ada_present: Boolean(sanitizedPeerMsg.ada?.length),
-			adb_present: Boolean(sanitizedPeerMsg.adb?.length),
+			ad_len: sanitizedPeerMsg.ad.length,
 		});
 
-		this.iskValue = await this.finish(normalizedSid, sanitizedPeerMsg);
+		this.iskValue = await this.finish(sid, sanitizedPeerMsg);
 
+		// IR responder sends its single response message (Yb, ADb)
 		if (mode === "initiator-responder" && role === "responder") {
 			if (!this.localMsg) {
 				throw new Error("CPaceSession.receive: missing outbound message");
@@ -206,15 +183,14 @@ export class CPaceSession {
 			const response: CPaceMessage = {
 				type: "msg",
 				payload: this.localMsg,
+				ad: localAd, // responder's ADb (may be EMPTY)
 			};
-			if (normalizedSessionAdb) {
-				response.adb = normalizedSessionAdb;
-			}
+
 			this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
 				payload_len: response.payload.length,
-				ada_present: false,
-				adb_present: Boolean(response.adb?.length),
+				ad_len: response.ad.length,
 			});
+
 			return response;
 		}
 
@@ -247,9 +223,9 @@ export class CPaceSession {
 			throw new Error("CPaceSession.finish: session not started");
 		}
 
-		const { suite, mode, role, ada, adb } = this.inputs;
-		const normalizedAda = this.ensureOptional("ada", ada);
-		const normalizedAdb = this.ensureOptional("adb", adb);
+		const { suite, mode, role, ad } = this.inputs;
+		const localAd = this.ensureRequired("ad", ad); // empty ok
+		const peerAd = this.ensureRequired("peer ad", peerMsg.ad); // after sanitize it should exist
 
 		this.emitAudit(AUDIT_CODES.CPACE_FINISH_BEGIN, "info", { mode, role });
 
@@ -270,37 +246,46 @@ export class CPaceSession {
 
 		let transcript: Uint8Array;
 		if (mode === "initiator-responder") {
-			transcript = makeTranscriptIR(
-				role as Exclude<CPaceRole, "symmetric">,
-				this.localMsg,
-				normalizedAda,
-				normalizedAdb,
-				peerMsg.payload,
-				peerMsg.ada,
-				peerMsg.adb,
-			);
+			// IR order depends on role
+			if (role === "initiator") {
+				transcript = makeTranscriptIR(
+					"initiator",
+					this.localMsg,
+					localAd,
+					peerMsg.payload,
+					peerAd,
+				);
+			} else if (role === "responder") {
+				transcript = makeTranscriptIR(
+					"responder",
+					this.localMsg,
+					localAd,
+					peerMsg.payload,
+					peerAd,
+				);
+			} else {
+				throw new Error(
+					"CPaceSession.finish: symmetric role in initiator-responder mode",
+				);
+			}
 		} else {
-			const { localAd, remoteAd } = this.selectSymmetricAssociatedData(
-				mode,
-				normalizedAda,
-				normalizedAdb,
-				peerMsg,
-			);
+			// symmetric: ordered concatenation will canonicalize (Y,AD) pairs
 			transcript = makeTranscriptOC(
 				this.localMsg,
 				localAd,
 				peerMsg.payload,
-				remoteAd,
+				peerAd,
 			);
 		}
 
-		const { isk, sidValue } = await deriveIskAndSid(
+		const { isk, sidOutput } = await deriveIskAndSid(
 			suite,
 			transcript,
 			sharedSecret,
 			sid,
 		);
-		this.sidValue = sidValue;
+
+		this.sidValue = sidOutput;
 		this.zeroizeSecrets(sharedSecret);
 
 		this.emitAudit(AUDIT_CODES.CPACE_FINISH_OK, "info", {
@@ -309,39 +294,6 @@ export class CPaceSession {
 		});
 
 		return isk;
-	}
-
-	/** @internal */
-	private selectSymmetricAssociatedData(
-		mode: CPaceMode,
-		normalizedAda: Uint8Array | undefined,
-		normalizedAdb: Uint8Array | undefined,
-		peerMsg: CPaceMessage,
-	): { localAd: Uint8Array; remoteAd: Uint8Array } {
-		if (normalizedAda && normalizedAdb) {
-			this.reportInputInvalid(
-				"ada/adb",
-				"symmetric mode expects a single associated data source",
-				{ mode },
-			);
-			throw new Error(
-				"CPaceSession.finish: symmetric mode expects a single associated data source",
-			);
-		}
-		const peerAdaBytes = this.ensureOptional("peer ada", peerMsg.ada);
-		const peerAdbBytes = this.ensureOptional("peer adb", peerMsg.adb);
-		if (peerAdaBytes && peerAdbBytes) {
-			this.reportInputInvalid(
-				"peer.ada/peer.adb",
-				"peer message must not include both ada and adb",
-			);
-			throw new Error(
-				"CPaceSession.finish: peer message must not include both ada and adb",
-			);
-		}
-		const localAd = normalizedAda ?? normalizedAdb ?? EMPTY;
-		const remoteAd = peerAdaBytes ?? peerAdbBytes ?? EMPTY;
-		return { localAd, remoteAd };
 	}
 
 	/** @internal */
@@ -376,21 +328,6 @@ export class CPaceSession {
 	): Uint8Array {
 		const enforcedOptions: EnsureBytesOptions = { ...options, optional: false };
 		return ensureFieldValidated(field, value, enforcedOptions, (err, ctx) => {
-			this.reportInputInvalid(
-				field,
-				err instanceof Error ? err.message : "validation failed",
-				this.buildValidationAuditExtra(ctx),
-			);
-		});
-	}
-
-	private ensureOptional(
-		field: string,
-		value: Uint8Array | undefined,
-		options?: EnsureBytesOptions,
-	): Uint8Array | undefined {
-		if (value === undefined) return undefined;
-		return ensureFieldValidated(field, value, options, (err, ctx) => {
 			this.reportInputInvalid(
 				field,
 				err instanceof Error ? err.message : "validation failed",

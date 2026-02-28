@@ -14,4 +14,5 @@ export default defineConfig({
 	splitting: false,
 
 	platform: "node",
+	external: ["../wasm/pkg/cpace_wasm.js"],
 });

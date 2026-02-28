@@ -25,7 +25,7 @@ describe("CPace binding — sid changes ISK", () => {
 					role: "initiator",
 					ci,
 					sid: utf8(sidStr),
-					ada,
+					ad: ada,
 				});
 				const B = new CPaceSession({
 					prs,
@@ -34,7 +34,7 @@ describe("CPace binding — sid changes ISK", () => {
 					role: "responder",
 					ci,
 					sid: utf8(sidStr),
-					adb,
+					ad: adb,
 				});
 				const m1 = await A.start();
 				const m2 = await B.receive(expectDefined(m1, "A start message"));

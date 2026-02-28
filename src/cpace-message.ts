@@ -1,24 +1,5 @@
 import { InvalidPeerElementError } from "./cpace-errors";
-import type { CPaceMessage, CPaceMode, CPaceSuiteDesc } from "./cpace-session";
-
-/**
- * @internal Assemble the outbound CPace message for the given mode.
- */
-export function buildOutboundMessage(
-	mode: CPaceMode,
-	payload: Uint8Array,
-	ada?: Uint8Array,
-	adb?: Uint8Array,
-): CPaceMessage {
-	const message: CPaceMessage = { type: "msg", payload };
-	if (mode === "symmetric") {
-		if (ada) message.ada = ada;
-		else if (adb) message.adb = adb;
-	} else if (ada) {
-		message.ada = ada;
-	}
-	return message;
-}
+import type { CPaceMessage, CPaceSuiteDesc } from "./cpace-session";
 
 /**
  * @internal Validate and normalise a received CPace message.
@@ -27,7 +8,7 @@ export function buildOutboundMessage(
 export function validateAndSanitizePeerMessage(
 	suite: CPaceSuiteDesc,
 	msg: CPaceMessage,
-	ensureOptional: (field: string, value?: Uint8Array) => Uint8Array | undefined,
+	ensureBytes: (field: string, value: Uint8Array) => Uint8Array,
 	onInvalid: (
 		field: string,
 		reason: string,
@@ -50,20 +31,15 @@ export function validateAndSanitizePeerMessage(
 		);
 	}
 
-	if (msg.ada !== undefined && msg.adb !== undefined) {
-		onInvalid(
-			"peer.ada/peer.adb",
-			"peer message must not include both ada and adb",
-		);
-		throw new Error(
-			"CPaceSession.receive: peer message must not include both ada and adb",
+	if (!(msg.ad instanceof Uint8Array)) {
+		onInvalid("peer.ad", "peer ad must be a Uint8Array");
+		throw new InvalidPeerElementError(
+			"CPaceSession.receive: peer ad must be a Uint8Array",
 		);
 	}
 
-	const sanitized: CPaceMessage = { type: "msg", payload: msg.payload };
-	const peerAda = ensureOptional("peer ada", msg.ada);
-	const peerAdb = ensureOptional("peer adb", msg.adb);
-	if (msg.ada !== undefined && peerAda) sanitized.ada = peerAda;
-	if (msg.adb !== undefined && peerAdb) sanitized.adb = peerAdb;
-	return sanitized;
+	// Allow empty ad; normalization/validation (e.g. max length) can be done by ensureBytes
+	const peerAd = ensureBytes("peer ad", msg.ad);
+
+	return { type: "msg", payload: msg.payload, ad: peerAd };
 }

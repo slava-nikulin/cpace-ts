@@ -10,28 +10,26 @@ const HAS_CRYPTO = !!globalThis.crypto && !!crypto.subtle;
 
 function makeSession(
 	prs: Uint8Array,
-	ada?: Uint8Array,
-	adb?: Uint8Array,
+	ad?: Uint8Array,
 ): CPaceSession {
 	return new CPaceSession({
 		prs,
 		suite,
 		mode: "symmetric",
 		role: "symmetric",
-		...(ada !== undefined ? { ada } : {}),
-		...(adb !== undefined ? { adb } : {}),
+		...(ad !== undefined ? { ad } : {}),
 	});
 }
 
 describe("CPace symmetric associated data", () => {
 	it.skipIf(!HAS_CRYPTO)(
-		"matches ISK when both sides agree on ada",
+		"matches ISK when both sides agree on ad",
 		async () => {
 			const prs = utf8("sym-ad-equal");
-			const ada = utf8("ada-shared");
+			const ad = utf8("ad-shared");
 
-			const A = makeSession(prs, ada, undefined);
-			const B = makeSession(prs, ada, undefined);
+			const A = makeSession(prs, ad);
+			const B = makeSession(prs, ad);
 
 			const aMsg = await A.start();
 			const bMsg = await B.start();
@@ -43,33 +41,32 @@ describe("CPace symmetric associated data", () => {
 	);
 
 	it.skipIf(!HAS_CRYPTO)(
-		"rejects configuration that specifies both ada and adb",
+		"includes ad on outbound message",
 		async () => {
 			const prs = utf8("sym-ad-both");
+			const ad = utf8("ad-value");
 			const session = new CPaceSession({
 				prs,
 				suite,
 				mode: "symmetric",
 				role: "symmetric",
-				ada: utf8("ada"),
-				adb: utf8("adb"),
+				ad,
 			});
 
-			await expect(session.start()).rejects.toThrow(
-				/CPaceSession\.start: symmetric mode accepts either ada or adb/,
-			);
+			const msg = expectDefined(await session.start(), "symmetric message");
+			expect(bytesToHex(msg.ad)).toBe(bytesToHex(ad));
 		},
 	);
 
 	it.skipIf(!HAS_CRYPTO)(
-		"matches ISK when one side uses ada and the other uses adb",
+		"matches ISK when sides use different ad values",
 		async () => {
 			const prs = utf8("sym-ad-mixed");
-			const ada = utf8("ada-A");
-			const adb = utf8("adb-B");
+			const adA = utf8("ad-A");
+			const adB = utf8("ad-B");
 
-			const A = makeSession(prs, ada, undefined);
-			const B = makeSession(prs, undefined, adb);
+			const A = makeSession(prs, adA);
+			const B = makeSession(prs, adB);
 
 			const aMsg = await A.start();
 			const bMsg = await B.start();
@@ -81,11 +78,11 @@ describe("CPace symmetric associated data", () => {
 	);
 
 	it.skipIf(!HAS_CRYPTO)(
-		"matches ISK even when ada strings differ",
+		"matches ISK when one side omits ad",
 		async () => {
 			const prs = utf8("sym-ad-diff");
-			const A = makeSession(prs, utf8("ada-A"), undefined);
-			const B = makeSession(prs, utf8("ada-B"), undefined);
+			const A = makeSession(prs, utf8("ad-A"));
+			const B = makeSession(prs, undefined);
 			const aMsg = await A.start();
 			const bMsg = await B.start();
 			await A.receive(expectDefined(bMsg, "B message"));

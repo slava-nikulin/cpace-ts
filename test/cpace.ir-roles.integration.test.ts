@@ -22,14 +22,14 @@ describe("CPace IR roles", () => {
 				suite,
 				mode: "initiator-responder",
 				role: "initiator",
-				ada,
+				ad: ada,
 			});
 			const B = new CPaceSession({
 				prs,
 				suite,
 				mode: "initiator-responder",
 				role: "responder",
-				adb,
+				ad: adb,
 			});
 
 			const m1 = await A.start();

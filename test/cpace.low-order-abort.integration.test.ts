@@ -27,9 +27,9 @@ describe("CPace abort on low-order peer element", () => {
 			});
 
 			await A.start(); // нормальное сообщение от A — ок
-			await expect(B.receive({ type: "msg", payload: TC_U0 })).rejects.toThrow(
-				/invalid peer element/i,
-			);
+			await expect(
+				B.receive({ type: "msg", payload: TC_U0, ad: new Uint8Array(0) }),
+			).rejects.toThrow(/invalid peer element/i);
 			// Можно прогнать и другие u*: u1,u2,u3,u4,u5,u7...
 		},
 	);

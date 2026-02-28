@@ -125,7 +125,11 @@ describe("CPaceSession audit logging", () => {
 		expectDefined(await session.start(), "initiator start");
 
 		await expect(
-			session.receive({ type: "msg", payload: new Uint8Array(1) }),
+			session.receive({
+				type: "msg",
+				payload: new Uint8Array(1),
+				ad: new Uint8Array(0),
+			}),
 		).rejects.toBeInstanceOf(InvalidPeerElementError);
 
 		const invalid = audit.events.find((e) => e.code === "CPACE_INPUT_INVALID");
@@ -136,7 +140,7 @@ describe("CPaceSession audit logging", () => {
 		});
 	});
 
-	it("records CPACE_INPUT_INVALID when peer supplies both ada and adb", async () => {
+	it("records CPACE_INPUT_INVALID when peer ad is not a Uint8Array", async () => {
 		const scalarResult = new Uint8Array(32).fill(6);
 		const group = createMockGroup(async () => scalarResult.slice());
 		const suite = createSuite(group);
@@ -163,15 +167,14 @@ describe("CPaceSession audit logging", () => {
 			session.receive({
 				type: "msg",
 				payload: peerMsg.payload,
-				ada: new Uint8Array(0),
-				adb: new Uint8Array(0),
+				ad: undefined as unknown as Uint8Array,
 			}),
-		).rejects.toThrow(/both ada and adb/);
+		).rejects.toThrow(/peer ad must be a Uint8Array/);
 
 		const invalid = audit.events.find((e) => {
 			if (e.code !== "CPACE_INPUT_INVALID") return false;
 			const data = e.data as { field?: string } | undefined;
-			return data?.field === "peer.ada/peer.adb";
+			return data?.field === "peer.ad";
 		});
 		expect(invalid).toBeDefined();
 	});
@@ -193,7 +196,11 @@ describe("CPaceSession audit logging", () => {
 		expectDefined(await session.start(), "start message");
 
 		await expect(
-			session.receive({ type: "msg", payload: new Uint8Array(32) }),
+			session.receive({
+				type: "msg",
+				payload: new Uint8Array(32),
+				ad: new Uint8Array(0),
+			}),
 		).rejects.toBeInstanceOf(InvalidPeerElementError);
 
 		const lowOrder = audit.events.find(

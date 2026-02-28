@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import { bytesToHex, generatorString, utf8 } from "../src/cpace-strings";
 import { sha512 } from "../src/hash";
-import { decodeUCoordinate, encodeUCoordinate } from "../src/rfc7748";
+import { decodeUCoordinate, encodeUCoordinate } from "./helpers";
 import {
 	TC_CI,
 	TC_PRS,

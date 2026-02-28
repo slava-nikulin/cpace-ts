@@ -1,4 +1,4 @@
-const MAX_INPUT_LENGTH = 0xffff;
+const MAX_INPUT_LENGTH = Number.MAX_SAFE_INTEGER;
 
 export type EnsureBytesOptions = {
 	optional?: boolean;
@@ -24,6 +24,12 @@ export function ensureBytes(
 		maxLength = MAX_INPUT_LENGTH,
 	}: EnsureBytesOptions = {},
 ): Uint8Array {
+	if (!Number.isSafeInteger(maxLength) || maxLength < 0) {
+		throw new RangeError(
+			`CPaceSession: ${name} maxLength must be a non-negative safe integer`,
+		);
+	}
+
 	if (value === undefined) {
 		if (!optional) {
 			throw new Error(`CPaceSession: ${name} is required`);
