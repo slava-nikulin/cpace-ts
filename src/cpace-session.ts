@@ -35,7 +35,7 @@ export interface CPaceSuiteDesc {
 }
 
 export type CPaceMode = "initiator-responder" | "symmetric";
-export type Role = "initiator" | "responder" | "symmetric";
+export type CPaceRole = "initiator" | "responder" | "symmetric";
 
 /**
  * All inputs required to initialize a CPace session.
@@ -44,7 +44,7 @@ export type CPaceInputs = {
 	prs: Uint8Array;
 	suite: CPaceSuiteDesc;
 	mode: CPaceMode;
-	role: Role;
+	role: CPaceRole;
 	ci?: Uint8Array;
 	ada?: Uint8Array;
 	adb?: Uint8Array;
@@ -271,7 +271,7 @@ export class CPaceSession {
 		let transcript: Uint8Array;
 		if (mode === "initiator-responder") {
 			transcript = makeTranscriptIR(
-				role as Exclude<Role, "symmetric">,
+				role as Exclude<CPaceRole, "symmetric">,
 				this.localMsg,
 				normalizedAda,
 				normalizedAdb,
@@ -347,7 +347,7 @@ export class CPaceSession {
 	/** @internal */
 	private async ensureResponderHasLocalMsg(
 		mode: CPaceMode,
-		role: Role,
+		role: CPaceRole,
 	): Promise<void> {
 		if (
 			mode === "initiator-responder" &&

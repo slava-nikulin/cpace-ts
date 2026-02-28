@@ -1,10 +1,8 @@
-// src/x25519.ts
-import { randomBytes } from "node:crypto";
 import { compareBytes } from "./bytes";
 import { generatorString, utf8 } from "./cpace-strings";
 import { mapToCurveElligator2 } from "./elligator2-curve25519";
 import type { HashFn } from "./hash";
-import { x25519Webcrypto } from "./x25519-webcrypto";
+import { x25519Noble } from "./x25519-noble";
 
 export interface GroupEnv {
 	name: string;
@@ -27,24 +25,32 @@ export interface GroupEnv {
 }
 
 // general helper
-function getRandomBytes(len: number): Uint8Array {
-	const out = new Uint8Array(len);
-	if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
-		crypto.getRandomValues(out);
-		return out;
+const MAX = 65_536;
+
+export function getRandomBytes(len: number): Uint8Array {
+	if (!Number.isInteger(len) || len < 0)
+		throw new RangeError("len must be a non-negative integer");
+
+	const c = globalThis.crypto;
+	if (!c?.getRandomValues) {
+		throw new Error(
+			"WebCrypto is unavailable. Requires secure context (HTTPS) or an environment with WebCrypto.",
+		);
 	}
-	const rb = randomBytes(len);
-	out.set(rb);
+
+	const out = new Uint8Array(len);
+	for (let i = 0; i < len; i += MAX) {
+		c.getRandomValues(out.subarray(i, Math.min(i + MAX, len)));
+	}
 	return out;
 }
 
 // general x25519 wrapper — single entry point
-async function x25519(
+export async function x25519(
 	scalar: Uint8Array,
 	point: Uint8Array,
 ): Promise<Uint8Array> {
-	// currently powered by WebCrypto
-	return x25519Webcrypto(scalar, point);
+	return x25519Noble(scalar, point);
 }
 
 export type LowOrderPointReason =
