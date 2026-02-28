@@ -18,3 +18,62 @@
 ## Install
 ```bash
 pnpm add cpace-ts
+```
+
+## Usage
+
+```ts
+import {
+  type CPaceMessage,
+  type CPaceMode,
+  type CPaceRole,
+  CPaceSession,
+  G_X25519,
+  sha512,
+} from 'cpace-ts';
+
+const EMPTY_AD = new Uint8Array(0);
+
+export function newSession(role: CPaceRole, prs: Uint8Array): CPaceSession {
+  const suite = {
+    name: 'CPACE-X25519-SHA512',
+    group: G_X25519,
+    hash: sha512,
+  } as const;
+
+  const mode: CPaceMode = 'initiator-responder';
+
+  const s = new CPaceSession({
+    prs,
+    suite,
+    mode,
+    role,
+  });
+
+  return s;
+}
+
+export async function start(s: CPaceSession): Promise<Uint8Array> {
+  const msg = await s.start();
+  if (!msg) throw new Error('CPaceSession.start() returned null/undefined');
+  return msg.payload;
+}
+
+export async function receive(
+  s: CPaceSession,
+  payload: Uint8Array,
+): Promise<Uint8Array> {
+  const inbound: CPaceMessage = {
+    type: 'msg',
+    payload,
+    ad: EMPTY_AD,
+  };
+
+  const out = await s.receive(inbound);
+  return out.payload;
+}
+
+export function exportISK(s: CPaceSession): Uint8Array {
+  return s.exportISK();
+}
+```
