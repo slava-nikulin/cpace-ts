@@ -77,7 +77,6 @@ export function exportISK(s: CPaceSession): Uint8Array {
   return s.exportISK();
 }
 
-
 async function runFullHandshake() {
   const prs = new Uint8Array([...]); // Pre-shared secret
 
