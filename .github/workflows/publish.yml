@@ -64,4 +64,4 @@ jobs:
       - name: Publish to npm (Trusted Publishing / OIDC)
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: npm publish --provenance
+        run: pnpm publish --provenance

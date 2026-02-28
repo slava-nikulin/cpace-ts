@@ -5,7 +5,7 @@
 [![types](https://img.shields.io/badge/types-.d.ts-blue.svg)](#)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
-**What is it?** Minimal, audit-friendly implementation in strict accordance with version 18 of the [IETF draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-cpace/) CPace for TS
+**What is it?** Minimal, audit-friendly implementation in strict accordance with version **18** of the [IETF draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-cpace/) CPace for TS
 **Why?** Clean API, strict validation, audit hooks, test-driven.
 
 ## Features
