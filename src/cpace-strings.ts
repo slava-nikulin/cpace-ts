@@ -7,15 +7,19 @@ export function utf8(value: string): Uint8Array {
 }
 
 export function leb128Encode(n: number): Uint8Array {
-	if (!Number.isSafeInteger(n) || n < 0)
+	if (!Number.isSafeInteger(n) || n < 0) {
 		throw new RangeError("leb128Encode: n must be a non-negative safe integer");
+	}
+
 	const bytes: number[] = [];
+
 	do {
-		let byte = n & 0x7f;
-		n >>>= 7;
-		if (n !== 0) byte |= 0x80;
+		let byte = n % 128;
+		n = Math.floor(n / 128);
+		if (n !== 0) byte += 0x80;
 		bytes.push(byte);
 	} while (n !== 0);
+
 	return new Uint8Array(bytes);
 }
 
