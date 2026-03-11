@@ -1,8 +1,9 @@
+import { concatBytes } from "@noble/curves/utils.js";
 import { compareBytes } from "./bytes";
 import { LowOrderPointError } from "./cpace-group-x25519";
 import type { CPaceSuiteDesc } from "./cpace-session";
 import { InvalidPeerElementError } from "./cpace-session";
-import { concat, lvCat, utf8 } from "./cpace-strings";
+import { lvCat, utf8 } from "./cpace-strings";
 
 const EMPTY = new Uint8Array(0);
 
@@ -85,19 +86,19 @@ export async function deriveIskAndSid(
 	sharedSecret: Uint8Array,
 	sid?: Uint8Array,
 ): Promise<{ isk: Uint8Array; sidOutput?: Uint8Array }> {
-	const dsiIsk = concat([suite.group.DSI, utf8("_ISK")]);
+	const dsiIsk = concatBytes(suite.group.DSI, utf8("_ISK"));
 
 	// In CPace, sid is an input string. If not present, treat as empty string.
 	const sidBytes = sid ?? EMPTY;
 
 	// ISK = H.hash(lv_cat(DSI||"_ISK", sid, K) || transcript)
 	const lvPart = lvCat(dsiIsk, sidBytes, sharedSecret);
-	const isk = await suite.hash(concat([lvPart, transcript]));
+	const isk = await suite.hash(concatBytes(lvPart, transcript));
 
 	// sid_output exists only for the "empty sid" run (Section 9.6)
 	if (sidBytes.length === 0) {
 		const sidOutput = await suite.hash(
-			concat([utf8("CPaceSidOutput"), transcript]),
+			concatBytes(utf8("CPaceSidOutput"), transcript),
 		);
 		return { isk, sidOutput }; // full hash output (SHA-512 => 64 bytes)
 	}

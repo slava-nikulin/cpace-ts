@@ -1,11 +1,7 @@
 // test/cpace.generator.longstrings.unit.test.ts
 import { describe, expect, it } from "vitest";
-import {
-	bytesToHex,
-	generatorString,
-	prependLen,
-	utf8,
-} from "../src/cpace-strings";
+import { generatorString, prependLen, utf8 } from "../src/cpace-strings";
+import { bytesToHex } from "@noble/curves/utils.js";
 
 // идентичная формуле из аппендикса (§A.2)
 function calcLenZpad(

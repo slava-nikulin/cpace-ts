@@ -1,7 +1,8 @@
 // test/cpace-b1.4.x25519.test.ts
+
+import { bytesToHex } from "@noble/curves/utils.js";
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
-import { bytesToHex } from "../src/cpace-strings";
 import { sha512 } from "../src/hash";
 import {
 	TC_CI,

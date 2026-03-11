@@ -1,7 +1,6 @@
+import { bytesToHex } from "@noble/curves/utils.js";
 import { describe, expect, it } from "vitest";
 import { G_X25519, LowOrderPointError } from "../src/cpace-group-x25519";
-import { bytesToHex } from "../src/cpace-strings";
-
 import {
 	TC_LOW_S,
 	TC_Q6,

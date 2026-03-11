@@ -1,8 +1,8 @@
-// test/cpace-integration.binding-ad.test.ts
+import { bytesToHex } from "@noble/curves/utils.js";
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import { CPaceSession } from "../src/cpace-session";
-import { bytesToHex, utf8 } from "../src/cpace-strings";
+import { utf8 } from "../src/cpace-strings";
 import { sha512 } from "../src/hash";
 import { expectDefined } from "./helpers";
 

@@ -1,7 +1,6 @@
 // test/cpace-strings.test.ts
 import { describe, expect, it } from "vitest";
 import {
-	bytesToHex,
 	generatorString,
 	lexicographicallyLarger,
 	lvCat,
@@ -12,6 +11,7 @@ import {
 	utf8,
 	zeroBytes,
 } from "../src/cpace-strings";
+import { bytesToHex } from "@noble/curves/utils.js";
 
 describe("prependLen (appendix A.1.2)", () => {
 	it('prepend_len(b"") == 00', () => {
