@@ -1,4 +1,3 @@
-// test/cpace-integration.low-order-abort.test.ts
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import { CPaceSession } from "../src/cpace-session";
@@ -26,11 +25,10 @@ describe("CPace abort on low-order peer element", () => {
 				role: "responder",
 			});
 
-			await A.start(); // нормальное сообщение от A — ок
+			await A.start();
 			await expect(
 				B.receive({ type: "msg", payload: TC_U0, ad: new Uint8Array(0) }),
 			).rejects.toThrow(/invalid peer element/i);
-			// Можно прогнать и другие u*: u1,u2,u3,u4,u5,u7...
 		},
 	);
 });

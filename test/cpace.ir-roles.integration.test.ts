@@ -16,7 +16,6 @@ describe("CPace IR roles", () => {
 			const ada = utf8("ADa");
 			const adb = utf8("ADb");
 
-			// A — инициатор, B — респондер
 			const A = new CPaceSession({
 				prs,
 				suite,

@@ -69,13 +69,13 @@ describe("CPaceSession validation", () => {
 		);
 	});
 
-	it("rejects overly long optional fields", async () => {
+	it("accepts 65,536-byte associated data", async () => {
 		const oversize = new Uint8Array(0x10000);
 		const session = makeSession({ ad: oversize });
 		await expect(session.start()).resolves.toBeDefined();
 	});
 
-	it.skipIf(!HAS_CRYPTO)("accepts maximum length optional fields", async () => {
+	it.skipIf(!HAS_CRYPTO)("accepts 65,535-byte associated data", async () => {
 		const maxLen = 0xffff;
 		const adInitiator = new Uint8Array(maxLen);
 		const adResponder = new Uint8Array(maxLen);

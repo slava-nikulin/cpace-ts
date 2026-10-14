@@ -10,7 +10,7 @@ const suite = { name: "CPACE-X25519-SHA512", group: G_X25519, hash: sha512 };
 
 describe("CPace sidOutput when no input sid", () => {
 	it.skipIf(!globalThis.crypto || !crypto.subtle)(
-		"IR: sidOutput equals prefix of H('CPaceSidOutput'||transcript_ir)",
+		"IR: sidOutput equals H('CPaceSidOutput' || transcript_ir)",
 		async () => {
 			const prs = utf8("prs-sidout-ir");
 			const ada = utf8("ADa");
@@ -35,15 +35,11 @@ describe("CPace sidOutput when no input sid", () => {
 			const m2 = await B.receive(expectDefined(m1, "A start message"));
 			await A.receive(expectDefined(m2, "B response message"));
 
-			// Получаем Ya / Yb из внутренних сообщений:
 			const Ya = expectDefined(m1, "A start message").payload;
 			const Yb = expectDefined(m2, "B response message").payload;
 			const tIR = transcriptIr(Ya, ada, Yb, adb);
 			const sidOutRef = await sha512(concatBytes(utf8("CPaceSidOutput"), tIR));
 
-			// В реализации ты берёшь первые 16 байт ISK в качестве sidValue,
-			// но стандартный sidOut — хеш с префиксом "CPaceSidOut".
-			// Мы проверим равенство первых 16 байт твоего sidValue и ref-хеша.
 			const ref = new Uint8Array(sidOutRef);
 			expect(bytesToHex(expectDefined(A.sidOutput, "A sidOutput"))).toBe(
 				bytesToHex(ref),
@@ -55,7 +51,7 @@ describe("CPace sidOutput when no input sid", () => {
 	);
 
 	it.skipIf(!globalThis.crypto || !crypto.subtle)(
-		"Symmetric: sidOutput equals prefix of H('CPaceSidOutput'||transcript_oc)",
+		"Symmetric: sidOutput equals H('CPaceSidOutput' || transcript_oc)",
 		async () => {
 			const prs = utf8("prs-sidout-oc");
 			const A = new CPaceSession({

@@ -10,10 +10,9 @@ const suite = { name: "CPACE-X25519-SHA512", group: G_X25519, hash: sha512 };
 
 describe("CPace binding — AD changes ISK", () => {
 	it.skipIf(!globalThis.crypto || !crypto.subtle)(
-		"different ADa/ADb produce different ISK (IR mode)",
+		"IR handshakes with different ADa produce different ISKs",
 		async () => {
 			const prs = utf8("prs-bind-ad");
-			// Рун #1
 			const A1 = new CPaceSession({
 				prs,
 				suite,
@@ -33,13 +32,12 @@ describe("CPace binding — AD changes ISK", () => {
 			await A1.receive(expectDefined(m2, "B1 response message"));
 			const isk1 = A1.exportISK();
 
-			// Рун #2 — меняем ADa
 			const A2 = new CPaceSession({
 				prs,
 				suite,
 				mode: "initiator-responder",
 				role: "initiator",
-				ad: utf8("ADa:v2"), // отличается
+				ad: utf8("ADa:v2"),
 			});
 			const B2 = new CPaceSession({
 				prs,

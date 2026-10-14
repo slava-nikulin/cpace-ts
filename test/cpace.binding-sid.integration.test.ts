@@ -10,7 +10,7 @@ const suite = { name: "CPACE-X25519-SHA512", group: G_X25519, hash: sha512 };
 
 describe("CPace binding — sid changes ISK", () => {
 	it.skipIf(!globalThis.crypto || !crypto.subtle)(
-		"different sid => different ISK (IR mode)",
+		"IR handshakes with different sid values produce different ISKs",
 		async () => {
 			const prs = utf8("prs-bind-sid");
 			const ci = utf8("CI:ctx");

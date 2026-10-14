@@ -179,7 +179,7 @@ describe("CPaceSession audit logging", () => {
 		expect(invalid).toBeDefined();
 	});
 
-	it("records CPACE_LOW_ORDER_POINT when scalar multiplication yields zero", async () => {
+	it("records CPACE_LOW_ORDER_POINT when scalarMultVfy throws LowOrderPointError", async () => {
 		const group = createMockGroup(async () => {
 			throw new LowOrderPointError("low order", { reason: "low-order" });
 		});

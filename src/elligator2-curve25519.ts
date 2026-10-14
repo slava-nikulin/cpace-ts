@@ -1,7 +1,4 @@
-// src/elligator2-curve25519.ts
-//
-// Invariant: wasm is built with `wasm-pack build --target web` (manual instantiation). [web:13][web:36]
-// Vite does not support the "ESM integration proposal for Wasm" used by `--target bundler`. [web:166][web:13]
+// Requires wasm-pack's --target web output for explicit WASM initialization.
 
 import init, {
 	elligator2_curve25519_u,
@@ -15,9 +12,10 @@ async function initOnce(): Promise<void> {
 	const wasmUrl = new URL("../wasm/pkg/cpace_wasm_bg.wasm", import.meta.url);
 
 	if (wasmUrl.protocol === "file:") {
+		// Node.js file URLs require filesystem reads rather than fetch.
 		const { readFile } = await import("node:fs/promises");
 		const bytes = await readFile(wasmUrl);
-		initSync({ module: bytes }); // sync instantiation from bytes is supported. [web:193]
+		initSync({ module: bytes });
 		return;
 	}
 

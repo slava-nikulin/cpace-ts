@@ -75,10 +75,6 @@ export function generatorString(
 	);
 }
 
-// =========================
-// A.3 ordered concatenation
-// =========================
-
 // A.3.1
 export function lexicographicallyLarger(
 	bytes1: Uint8Array,

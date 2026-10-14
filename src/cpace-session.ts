@@ -74,7 +74,6 @@ export class CPaceSession {
 		this.auditLogger = audit;
 		this.sessionId = sessionId ?? generateSessionId();
 
-		// normalize ad once
 		this.inputs = {
 			...inputs,
 			ad: inputs.ad ?? EMPTY,
@@ -116,8 +115,7 @@ export class CPaceSession {
 
 		const normalizedPrs = this.ensureRequired("prs", prs, { minLength: 1 });
 
-		// ad is always defined if you normalized in ctor; allow empty
-		const normalizedAd = this.ensureRequired("ad", ad); // no minLength => empty ok
+		const normalizedAd = this.ensureRequired("ad", ad);
 
 		this.emitAudit(AUDIT_CODES.CPACE_START_BEGIN, "info", { mode, role });
 
@@ -147,7 +145,7 @@ export class CPaceSession {
 	/**
 	 * Consume a peer CPace message and, when required, return a response.
 	 *
-	 * @param msg Peer message containing the serialized group element and optional AD.
+	 * @param msg Peer message containing the serialized group element and associated data.
 	 * @returns A response message for responder roles, otherwise `undefined`.
 	 * @throws InvalidPeerElementError when peer inputs are malformed or low-order.
 	 */
@@ -156,8 +154,7 @@ export class CPaceSession {
 
 		this.ensureRequired("prs", prs, { minLength: 1 });
 
-		// local AD is required semantically, but empty is allowed
-		const localAd = this.ensureRequired("ad", ad); // no minLength => empty ok
+		const localAd = this.ensureRequired("ad", ad);
 
 		const sanitizedPeerMsg = validateAndSanitizePeerMessage(
 			suite,
@@ -175,7 +172,6 @@ export class CPaceSession {
 
 		this.iskValue = await this.finish(sid, sanitizedPeerMsg);
 
-		// IR responder sends its single response message (Yb, ADb)
 		if (mode === "initiator-responder" && role === "responder") {
 			if (!this.localMsg) {
 				throw new Error("CPaceSession.receive: missing outbound message");
@@ -183,7 +179,7 @@ export class CPaceSession {
 			const response: CPaceMessage = {
 				type: "msg",
 				payload: this.localMsg,
-				ad: localAd, // responder's ADb (may be EMPTY)
+				ad: localAd,
 			};
 
 			this.emitAudit(AUDIT_CODES.CPACE_START_SENT, "info", {
@@ -209,7 +205,7 @@ export class CPaceSession {
 	}
 
 	/**
-	 * Obtain the session identifier output negotiated during the handshake, if any.
+	 * Return the transcript-derived session identifier when the input sid is empty.
 	 */
 	get sidOutput(): Uint8Array | undefined {
 		return this.sidValue ? this.sidValue.slice() : undefined;
@@ -224,8 +220,8 @@ export class CPaceSession {
 		}
 
 		const { suite, mode, role, ad } = this.inputs;
-		const localAd = this.ensureRequired("ad", ad); // empty ok
-		const peerAd = this.ensureRequired("peer ad", peerMsg.ad); // after sanitize it should exist
+		const localAd = this.ensureRequired("ad", ad);
+		const peerAd = this.ensureRequired("peer ad", peerMsg.ad);
 
 		this.emitAudit(AUDIT_CODES.CPACE_FINISH_BEGIN, "info", { mode, role });
 
@@ -246,7 +242,7 @@ export class CPaceSession {
 
 		let transcript: Uint8Array;
 		if (mode === "initiator-responder") {
-			// IR order depends on role
+			// The initiator's (Y, AD) pair precedes the responder's.
 			if (role === "initiator") {
 				transcript = makeTranscriptIR(
 					"initiator",
@@ -269,7 +265,7 @@ export class CPaceSession {
 				);
 			}
 		} else {
-			// symmetric: ordered concatenation will canonicalize (Y,AD) pairs
+			// Ordered concatenation makes the transcript independent of peer roles.
 			transcript = makeTranscriptOC(
 				this.localMsg,
 				localAd,

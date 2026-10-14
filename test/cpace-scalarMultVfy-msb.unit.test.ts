@@ -16,7 +16,6 @@ describe("X25519 scalarMultVfy MSB handling", () => {
 		const yaScalar = TC_YA_SCALAR;
 		const Yb = TC_YB;
 
-		// Recreate Yb from the generator to avoid relying on the vector literal being canonical.
 		const yaPublic = await G_X25519.scalarMult(yaScalar, g);
 		expect(yaPublic.length).toBe(32);
 

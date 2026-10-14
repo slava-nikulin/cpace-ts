@@ -1,5 +1,3 @@
-// pkcs8.ts
-
 function derLen(n: number): Uint8Array {
 	if (n < 0x80) {
 		return new Uint8Array([n]);
@@ -23,12 +21,9 @@ function derSeq(...parts: Uint8Array[]): Uint8Array {
 	const out = new Uint8Array(1 + lenEnc.length + len);
 	let offset = 0;
 
-	// tag
 	out[offset++] = 0x30;
-	// length
 	out.set(lenEnc, offset);
 	offset += lenEnc.length;
-	// parts
 	for (const p of parts) {
 		out.set(p, offset);
 		offset += p.length;
@@ -66,9 +61,8 @@ export function pkcs8FromRawX25519Private(raw32: Uint8Array): Uint8Array {
 	// AlgorithmIdentifier ::= SEQUENCE { OID x25519 }
 	const algId = derSeq(derOIDX25519());
 
-	// inner OCTET STRING with 32 bytes
+	// PrivateKeyInfo wraps the raw scalar in two OCTET STRINGs.
 	const inner = derOctet(raw32);
-	// privateKey (OCTET STRING)
 	const privateKey = derOctet(inner);
 
 	// PrivateKeyInfo ::= SEQUENCE { version(0), algId, privateKey }
