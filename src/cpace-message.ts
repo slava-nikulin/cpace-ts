@@ -38,7 +38,7 @@ export function validateAndSanitizePeerMessage(
 		);
 	}
 
-	// Allow empty ad; normalization/validation (e.g. max length) can be done by ensureBytes
+	// Empty associated data is valid.
 	const peerAd = ensureBytes("peer ad", msg.ad);
 
 	return { type: "msg", payload: msg.payload, ad: peerAd };

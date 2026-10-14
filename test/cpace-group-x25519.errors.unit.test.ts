@@ -20,7 +20,7 @@ describe("X25519Group error reporting", () => {
 		);
 	});
 
-	it("scalarMultVfy rejects non-canonical point lengths with context", async () => {
+	it("scalarMultVfy rejects invalid point lengths with context", async () => {
 		await expect(
 			G_X25519.scalarMultVfy(new Uint8Array(32), new Uint8Array(1)),
 		).rejects.toThrow(

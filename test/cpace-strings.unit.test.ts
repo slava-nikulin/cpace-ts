@@ -1,7 +1,5 @@
-// test/cpace-strings.test.ts
 import { describe, expect, it } from "vitest";
 import {
-	bytesToHex,
 	generatorString,
 	lexicographicallyLarger,
 	lvCat,
@@ -12,6 +10,7 @@ import {
 	utf8,
 	zeroBytes,
 } from "../src/cpace-strings";
+import { bytesToHex } from "@noble/curves/utils.js";
 
 describe("prependLen (appendix A.1.2)", () => {
 	it('prepend_len(b"") == 00', () => {
@@ -29,7 +28,6 @@ describe("prependLen (appendix A.1.2)", () => {
 		for (let i = 0; i < 127; i += 1) data[i] = i;
 		const r = prependLen(data);
 		const hex = bytesToHex(r);
-		// начало и конец сравниваем с драфтом
 		expect(hex.startsWith("7f00")).toBe(true);
 		expect(hex.endsWith("7e")).toBe(true);
 		expect(r.length).toBe(1 + 127);
@@ -40,7 +38,7 @@ describe("prependLen (appendix A.1.2)", () => {
 		for (let i = 0; i < 128; i += 1) data[i] = i;
 		const r = prependLen(data);
 		const hex = bytesToHex(r);
-		// драфт: 80 01 + 0..7f
+		// Length 128 requires a two-byte unsigned LEB128 prefix: 80 01.
 		expect(hex.startsWith("8001")).toBe(true);
 		expect(hex.endsWith("7f")).toBe(true);
 		expect(r.length).toBe(2 + 128);
@@ -56,16 +54,13 @@ describe("lvCat (appendix A.1.4)", () => {
 });
 
 describe("generatorString (appendix A.2)", () => {
-	it("fills zero padding correctly for short PRS", () => {
+	it("prefixes the DSI with its length for a short PRS", () => {
 		const dsi = utf8("CPace255");
 		const prs = utf8("pwd");
 		const ci = utf8("chan");
 		const sid = utf8("sid");
-		// SHA-512 -> 128
+		// SHA-512 has a 128-byte block size.
 		const g = generatorString(dsi, prs, ci, sid, 128);
-		// просто проверим что структура lv_cat: 5 элементов
-		// dsi, prs, zpad, ci, sid
-		// первый байт = len(dsi)
 		expect(g[0]).toBe(dsi.length);
 	});
 });

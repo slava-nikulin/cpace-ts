@@ -1,8 +1,8 @@
-// test/cpace-integration.binding-ci.test.ts
+import { bytesToHex } from "@noble/curves/utils.js";
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import { CPaceSession } from "../src/cpace-session";
-import { bytesToHex, utf8 } from "../src/cpace-strings";
+import { utf8 } from "../src/cpace-strings";
 import { sha512 } from "../src/hash";
 import { expectDefined } from "./helpers";
 
@@ -10,14 +10,13 @@ const suite = { name: "CPACE-X25519-SHA512", group: G_X25519, hash: sha512 };
 
 describe("CPace binding — CI changes ISK", () => {
 	it.skipIf(!globalThis.crypto || !crypto.subtle)(
-		"different CI => different ISK (IR mode)",
+		"IR handshakes with different CI produce different ISKs",
 		async () => {
 			const prs = utf8("prs-bind-ci");
 			const sid = utf8("public-sid");
 			const ada = utf8("ADa");
 			const adb = utf8("ADb");
 
-			// CI #1
 			const A1 = new CPaceSession({
 				prs,
 				suite,
@@ -41,7 +40,6 @@ describe("CPace binding — CI changes ISK", () => {
 			await A1.receive(expectDefined(m2, "B1 response message"));
 			const isk1 = A1.exportISK();
 
-			// CI #2
 			const A2 = new CPaceSession({
 				prs,
 				suite,

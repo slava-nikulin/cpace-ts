@@ -1,3 +1,5 @@
+import { concatBytes } from "@noble/curves/utils.js";
+
 const textEncoder = new TextEncoder();
 
 export function utf8(value: string): Uint8Array {
@@ -8,15 +10,16 @@ export function leb128Encode(n: number): Uint8Array {
 	if (!Number.isSafeInteger(n) || n < 0) {
 		throw new RangeError("leb128Encode: n must be a non-negative safe integer");
 	}
+
 	const bytes: number[] = [];
-	let v = n;
-	while (true) {
-		let byte = v & 0x7f;
-		v = Math.floor(v / 128);
-		if (v !== 0) byte |= 0x80;
+
+	do {
+		let byte = n % 128;
+		n = Math.floor(n / 128);
+		if (n !== 0) byte += 0x80;
 		bytes.push(byte);
-		if (v === 0) break;
-	}
+	} while (n !== 0);
+
 	return new Uint8Array(bytes);
 }
 
@@ -72,16 +75,6 @@ export function generatorString(
 	);
 }
 
-export function bytesToHex(u: Uint8Array): string {
-	return Array.from(u)
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
-}
-
-// =========================
-// A.3 ordered concatenation
-// =========================
-
 // A.3.1
 export function lexicographicallyLarger(
 	bytes1: Uint8Array,
@@ -103,9 +96,9 @@ export function lexicographicallyLarger(
 // A.3.2
 export function oCat(bytes1: Uint8Array, bytes2: Uint8Array): Uint8Array {
 	if (lexicographicallyLarger(bytes1, bytes2)) {
-		return concat([utf8("oc"), bytes1, bytes2]);
+		return concatBytes(utf8("oc"), bytes1, bytes2);
 	}
-	return concat([utf8("oc"), bytes2, bytes1]);
+	return concatBytes(utf8("oc"), bytes2, bytes1);
 }
 
 // A.3.4
@@ -117,7 +110,7 @@ export function transcriptIr(
 ): Uint8Array {
 	const left = lvCat(ya, ada);
 	const right = lvCat(yb, adb);
-	return concat([left, right]);
+	return concatBytes(left, right);
 }
 
 // A.3.6
@@ -130,17 +123,4 @@ export function transcriptOc(
 	const left = lvCat(ya, ada);
 	const right = lvCat(yb, adb);
 	return oCat(left, right);
-}
-
-// общий concat, чтобы не дублировать
-export function concat(chunks: Uint8Array[]): Uint8Array {
-	let total = 0;
-	for (const c of chunks) total += c.length;
-	const out = new Uint8Array(total);
-	let off = 0;
-	for (const c of chunks) {
-		out.set(c, off);
-		off += c.length;
-	}
-	return out;
 }

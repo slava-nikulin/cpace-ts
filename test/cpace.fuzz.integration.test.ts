@@ -1,4 +1,3 @@
-// test/cpace.fuzz.integration.test.ts
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import { CPaceSession } from "../src/cpace-session";
@@ -20,7 +19,7 @@ function randBytes(n: number): Uint8Array {
 function randAscii(n: number): Uint8Array {
 	const bytes = new Uint8Array(n);
 	for (let i = 0; i < n; i++) {
-		// видимые ASCII (0x20..0x7E)
+		// Printable ASCII (0x20–0x7E).
 		bytes[i] = (0x20 + Math.random() * 95) | 0;
 	}
 	return bytes;
@@ -31,11 +30,11 @@ function maybe<T>(x: T): T | undefined {
 }
 
 function mutateOneByte(x: Uint8Array): Uint8Array {
-	if (x.length === 0) return new Uint8Array([1]); // если пусто — сделаем непустым
+	if (x.length === 0) return new Uint8Array([1]);
 	const y = x.slice();
 	const idx = (Math.random() * y.length) | 0;
 	const current = y[idx] ?? 0;
-	y[idx] = current ^ (1 + ((Math.random() * 254) | 0)); // меняем байт
+	y[idx] = current ^ (1 + ((Math.random() * 254) | 0));
 	return y;
 }
 
@@ -43,7 +42,7 @@ function suite() {
 	return {
 		name: "X25519+SHA512",
 		group: G_X25519,
-		hash: sha512, // async
+		hash: sha512,
 	};
 }
 
@@ -81,11 +80,11 @@ async function runCpaceIR(
 		...(ADb !== undefined ? { ad: ADb } : {}),
 	});
 
-	const msgA = await initiator.start(); // инициатор шлёт
+	const msgA = await initiator.start();
 	const msgB = await responder.receive(
 		expectDefined(msgA, "initiator handshake message"),
-	); // респондер отвечает
-	await initiator.receive(expectDefined(msgB, "responder handshake message")); // инициатор заканчивает
+	);
+	await initiator.receive(expectDefined(msgB, "responder handshake message"));
 
 	return { A: initiator, B: responder };
 }
@@ -120,20 +119,18 @@ async function runCpaceOC(
 }
 
 describe("CPace fuzzing: ISK match/mismatch", () => {
-	// Важно: WebCrypto async — лучше увеличить таймаут
-	const ITERS = 25; // можно поднять до 100 в CI
+	const ITERS = 25;
 
-	it("IR mode: ISK(A) == ISK(B) для одинаковых входов", async () => {
+	it("IR mode: peers derive matching ISKs with matching inputs", async () => {
 		for (let i = 0; i < ITERS; i++) {
-			const prs = randAscii(4 + ((Math.random() * 24) | 0)); // 4..28 байт
+			const prs = randAscii(4 + ((Math.random() * 24) | 0));
 			const ci = maybe(randBytes((Math.random() * 32) | 0));
-			const sid = maybe(randBytes(16)); // либо undefined, либо 16B
+			const sid = maybe(randBytes(16));
 			const ADa = maybe(randAscii((Math.random() * 8) | 0));
 			const ADb = maybe(randAscii((Math.random() * 8) | 0));
 
 			const { A, B } = await runCpaceIR(prs, ci, sid, ADa, ADb);
 			expect(A.exportISK()).toEqual(B.exportISK());
-			// sidOutput policy:
 			if (sid && sid.length > 0) {
 				expect(A.sidOutput).toEqual(undefined);
 				expect(B.sidOutput).toEqual(undefined);
@@ -148,7 +145,7 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 		}
 	});
 
-	it("IR mode: точечные изменения входов дают разные ISK", async () => {
+	it("IR mode: handshakes with mutated inputs produce different ISKs", async () => {
 		for (let i = 0; i < ITERS; i++) {
 			const prs = randAscii(12);
 			const ci = maybe(randBytes(10));
@@ -159,12 +156,10 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 			const base = await runCpaceIR(prs, ci, sid, ADa, ADb);
 			const ref = base.A.exportISK();
 
-			// PRS мутация
 			{
 				const { A } = await runCpaceIR(mutateOneByte(prs), ci, sid, ADa, ADb);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
-			// CI мутация
 			{
 				const { A } = await runCpaceIR(
 					prs,
@@ -175,13 +170,11 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 				);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
-			// SID мутация/удаление
 			{
 				const sid2 = sid ? mutateOneByte(sid) : randBytes(8);
 				const { A } = await runCpaceIR(prs, ci, sid2, ADa, ADb);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
-			// ADa мутация
 			{
 				const { A } = await runCpaceIR(
 					prs,
@@ -192,7 +185,6 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 				);
 				expect(A.exportISK()).not.toEqual(ref);
 			}
-			// ADb мутация
 			{
 				const { A } = await runCpaceIR(
 					prs,
@@ -206,7 +198,7 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 		}
 	});
 
-	it("OC mode: ISK(A) == ISK(B) для одинаковых входов", async () => {
+	it("Symmetric mode: peers derive matching ISKs with matching inputs", async () => {
 		for (let i = 0; i < ITERS; i++) {
 			const prs = randAscii(6 + ((Math.random() * 24) | 0));
 			const ci = maybe(randBytes((Math.random() * 32) | 0));
@@ -230,7 +222,7 @@ describe("CPace fuzzing: ISK match/mismatch", () => {
 		}
 	});
 
-	it("OC mode: точечные изменения входов дают разные ISK", async () => {
+	it("Symmetric mode: handshakes with mutated inputs produce different ISKs", async () => {
 		for (let i = 0; i < ITERS; i++) {
 			const prs = randAscii(10);
 			const ci = maybe(randBytes(7));

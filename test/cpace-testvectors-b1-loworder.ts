@@ -1,6 +1,3 @@
-// test/cpace-testvectors-b1-loworder.ts
-
-// small local helper to avoid importing from src
 export function hexToBytes(hex: string): Uint8Array {
 	const clean = hex.trim().toLowerCase();
 	const out = new Uint8Array(clean.length / 2);
@@ -10,12 +7,12 @@ export function hexToBytes(hex: string): Uint8Array {
 	return out;
 }
 
-// s из драфта B.1.10
+// Scalar s from CPace Appendix B.1.10.
 export const TC_LOW_S = hexToBytes(
 	"af46e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449aff",
 );
 
-// u0 ... ub — ровно как в драфте
+// Input u-coordinates u0 through ub from Appendix B.1.10.
 export const TC_U0 = hexToBytes(
 	"0000000000000000000000000000000000000000000000000000000000000000",
 );
@@ -53,7 +50,7 @@ export const TC_UB = hexToBytes(
 	"4c9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7",
 );
 
-// ожидания q0 ... qb — тоже прямо из драфта
+// Expected outputs q0 through qb from Appendix B.1.10.
 export const TC_Q0 = hexToBytes(
 	"0000000000000000000000000000000000000000000000000000000000000000",
 );

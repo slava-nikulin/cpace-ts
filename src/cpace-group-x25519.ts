@@ -24,7 +24,6 @@ export interface GroupEnv {
 	deserialize(buf: Uint8Array): Uint8Array;
 }
 
-// general helper
 const MAX = 65_536;
 
 export function getRandomBytes(len: number): Uint8Array {
@@ -45,7 +44,6 @@ export function getRandomBytes(len: number): Uint8Array {
 	return out;
 }
 
-// general x25519 wrapper — single entry point
 export async function x25519(
 	scalar: Uint8Array,
 	point: Uint8Array,
@@ -93,17 +91,17 @@ export class X25519Group implements GroupEnv {
 		ci?: Uint8Array,
 		sid?: Uint8Array,
 	): Promise<Uint8Array> {
-		// d18: gen_str = generator_string(G.DSI, PRS, CI, sid, H.s_in_bytes)
+		// gen_str = generator_string(G.DSI, PRS, CI, sid, H.s_in_bytes)
 		const genStr = generatorString(this.DSI, prs, ci, sid, this.sInBytes);
 
-		// d18: gen_str_hash = H.hash(gen_str, G.field_size_bytes)
+		// gen_str_hash = H.hash(gen_str, G.field_size_bytes)
 		const h = await hash(genStr);
 		if (h.length < this.fieldSizeBytes) {
 			throw new Error("X25519Group.calculateGenerator: hash output too short");
 		}
 		const genStrHash = h.slice(0, this.fieldSizeBytes);
 
-		// d18: u = decodeUCoordinate(gen_str_hash, G.field_size_bits)
+		// u = decodeUCoordinate(gen_str_hash, G.field_size_bits)
 		// For X25519 (255 bits): clear unused MSB (bit #255).
 		const lastIndex = this.fieldSizeBytes - 1;
 		const lastByte = genStrHash[lastIndex];
@@ -114,8 +112,8 @@ export class X25519Group implements GroupEnv {
 		}
 		genStrHash[lastIndex] = lastByte & 0x7f;
 
-		// d18: (g, v) = map_to_curve_elligator2(u); v discarded
-		// IMPORTANT (d18 §9.10): mapping MUST be constant-time.
+		// (g, v) = map_to_curve_elligator2(u); v discarded
+		// CPace §10.10 requires constant-time mapping of the secret generator.
 		const gU = await mapToCurveElligator2(genStrHash);
 
 		return this.serialize(gU);

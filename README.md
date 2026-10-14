@@ -5,7 +5,7 @@
 [![types](https://img.shields.io/badge/types-.d.ts-blue.svg)](#)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](#)
 
-Audit-friendly implementation in strict accordance with version **18** of the [IETF draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-cpace/) CPace for TS
+TypeScript implementation of CPace, supporting the X25519/SHA-512 suite defined in draft-irtf-cfrg-cpace-21.
 
 ## Features
 - X25519 + SHA-512 suite

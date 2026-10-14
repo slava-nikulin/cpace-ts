@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { equalBytes } from "../src/bytes";
 
-describe("equalBytes constant time comparison", () => {
+describe("equalBytes", () => {
 	it("returns true for identical arrays", () => {
 		const a = new Uint8Array([1, 2, 3, 4]);
 		const b = new Uint8Array([1, 2, 3, 4]);

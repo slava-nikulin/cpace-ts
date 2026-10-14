@@ -1,12 +1,12 @@
+import { bytesToHex } from "@noble/curves/utils.js";
 import { describe, expect, it } from "vitest";
 import { G_X25519 } from "../src/cpace-group-x25519";
 import type { CPaceSuiteDesc } from "../src/cpace-session";
 import { CPaceSession } from "../src/cpace-session";
-import { bytesToHex, utf8 } from "../src/cpace-strings";
+import { utf8 } from "../src/cpace-strings";
 import { sha512 } from "../src/hash";
 import { expectDefined } from "./helpers";
 
-// Базовый suite
 const suite: CPaceSuiteDesc = {
 	name: "CPACE-X25519-SHA512",
 	group: G_X25519,
@@ -21,9 +21,9 @@ function hex(s: string): Uint8Array {
 }
 
 describe("CPace integration — X25519+SHA-512", () => {
-	it("IR happy path (оба знают PRS, есть CI/sid/AD): ISK совпадает, sidOutput=given sid", async () => {
+	it("IR mode: peers derive matching ISKs and omit sidOutput when sid is supplied", async () => {
 		const prs = utf8("Password");
-		const ci = utf8("oc\u000bB_responder\u000bA_initiator"); // тот же CI из векторов
+		const ci = utf8("oc\u000bB_responder\u000bA_initiator");
 		const sid = hex("7e4b4791d6a8ef019b936c79fb7f2c57");
 
 		const a = new CPaceSession({
@@ -55,12 +55,11 @@ describe("CPace integration — X25519+SHA-512", () => {
 		const iskA = a.exportISK();
 		const iskB = b.exportISK();
 		expect(bytesToHex(iskA)).toBe(bytesToHex(iskB));
-		// раз sid задан, sidOutput должен дублировать его
 		expect(a.sidOutput).toBe(undefined);
 		expect(b.sidOutput).toBe(undefined);
 	});
 
-	it("Symmetric happy path (unordered, оба шлют/получают): ISK совпадает, и отличается от IR-режима", async () => {
+	it("Symmetric mode: peers derive matching ISKs after exchanging messages", async () => {
 		const prs = utf8("Password");
 		const ci = utf8("same-ci");
 		const sid = utf8("same-sid");
@@ -92,14 +91,13 @@ describe("CPace integration — X25519+SHA-512", () => {
 		await p.receive(qm);
 		await q.receive(pm);
 
-		// во symmetric возможен второй обмен, но в нашем CPaceSession это не требуется
 		const iskP = p.exportISK();
 		const iskQ = q.exportISK();
 
 		expect(bytesToHex(iskP)).toBe(bytesToHex(iskQ));
 	});
 
-	it("Работает без CI и без sid (оба пустые): sidOutput берётся из ISK[0..16), у сторон одинаковый", async () => {
+	it("IR mode: peers derive matching ISKs and sid outputs without CI or sid", async () => {
 		const prs = utf8("only-password");
 
 		const a = new CPaceSession({
@@ -107,14 +105,12 @@ describe("CPace integration — X25519+SHA-512", () => {
 			suite,
 			mode: "initiator-responder",
 			role: "initiator",
-			// ci/sid не указываем
 		});
 		const b = new CPaceSession({
 			prs,
 			suite,
 			mode: "initiator-responder",
 			role: "responder",
-			// ci/sid не указываем
 		});
 
 		const aMsg = expectDefined(await a.start(), "initiator handshake message");
@@ -131,7 +127,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(aSid)).toBe(bytesToHex(bSid));
 	});
 
-	it("Разные PRS -> разные ISK (при прочих равных)", async () => {
+	it("IR mode: peers derive different ISKs when PRS values differ", async () => {
 		const ci = utf8("ctx");
 		const sid = utf8("sess");
 		const ada = utf8("ADa");
@@ -166,7 +162,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(a.exportISK())).not.toBe(bytesToHex(b.exportISK()));
 	});
 
-	it("Разные CI -> разные ISK (CI секретен, не на проводе, но входит в g)", async () => {
+	it("IR mode: peers derive different ISKs when CI values differ", async () => {
 		const prs = utf8("Password");
 		const sid = utf8("some-sid");
 
@@ -199,7 +195,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(a.exportISK())).not.toBe(bytesToHex(b.exportISK()));
 	});
 
-	it("Разные sid -> разные ISK (sid публичен, но MUST совпадать)", async () => {
+	it("IR mode: peers derive different ISKs when sid values differ", async () => {
 		const prs = utf8("Password");
 		const ci = utf8("CI");
 
@@ -232,7 +228,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(a.exportISK())).not.toBe(bytesToHex(b.exportISK()));
 	});
 
-	it("Изменение AD (ADa/ADb) меняет transcript и ISK", async () => {
+	it("IR handshakes with different ADa produce different ISKs", async () => {
 		const prs = utf8("Password");
 		const ci = utf8("CI");
 		const sid = utf8("SID");
@@ -265,7 +261,6 @@ describe("CPace integration — X25519+SHA-512", () => {
 
 		const iskV1 = a.exportISK();
 
-		// Повтор с другим ADa
 		const a2 = new CPaceSession({
 			prs,
 			suite,
@@ -299,10 +294,9 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(iskV1)).not.toBe(bytesToHex(iskV2));
 	});
 
-	it("Abort на низкопорядковой/некорректной точке (peer message подменён)", async () => {
+	it("rejects a peer message containing the low-order u-coordinate zero", async () => {
 		const prs = utf8("Password");
 		const ci = utf8("CI");
-		// Подготовим корректный инициатор без sid, а ответ «подделаем»
 		const a = new CPaceSession({
 			prs,
 			suite,
@@ -314,21 +308,19 @@ describe("CPace integration — X25519+SHA-512", () => {
 
 		await a.start();
 
-		// Подмена ответа: вместо реального Yb кидаем low-order u=0^32
-		const fakeLowOrder = new Uint8Array(32); // u0 из векторов
+		const fakeLowOrder = new Uint8Array(32);
 		await expect(async () => {
 			await a.receive({ type: "msg", payload: fakeLowOrder, ad: utf8("ADb") });
 		}).rejects.toThrow(/invalid peer element/i);
 	});
 
-	it("Оба вида transcript (IR vs OC) действительно различаются и дают разные ISK", async () => {
+	it("IR and symmetric handshakes produce different ISKs", async () => {
 		const prs = utf8("Password");
 		const ci = utf8("CI");
 		const sid = utf8("SID");
 		const ADa = utf8("ADa");
 		const ADb = utf8("ADb");
 
-		// IR
 		const A = new CPaceSession({
 			prs,
 			suite,
@@ -355,7 +347,6 @@ describe("CPace integration — X25519+SHA-512", () => {
 		await A.receive(Bm);
 		const iskIR = A.exportISK();
 
-		// Symmetric
 		const P = new CPaceSession({
 			prs,
 			suite,
@@ -383,9 +374,7 @@ describe("CPace integration — X25519+SHA-512", () => {
 		expect(bytesToHex(iskIR)).not.toBe(bytesToHex(iskOC));
 	});
 
-	it("Swap ролей в IR при фиксированных скалярах даёт тот же ISK (детерминированный sanity-check)", async () => {
-		// Для этого теста нам нужно переопределить sampleScalar,
-		// чтобы обе стороны выбрали фиксированные ya/yb.
+	it("derives identical IR ISKs for equivalent handshakes with fixed scalars", async () => {
 		const fixedYA = hex(
 			"21b4f4bd9e64ed355c3eb676a28ebedaf6d8f17bdc365995b319097153044080",
 		);
@@ -393,9 +382,9 @@ describe("CPace integration — X25519+SHA-512", () => {
 			"848b0779ff415f0af4ea14df9dd1d3c29ac41d836c7808896c4eba19c51ac40a",
 		);
 
-		// Оборачиваем группу (простой шпион над sampleScalar)
 		const Group = Object.create(G_X25519);
 		let calls = 0;
+		// Return copies because CPaceSession clears ephemeral scalars after derivation.
 		Group.sampleScalar = () =>
 			++calls % 2 === 1 ? fixedYA.slice() : fixedYB.slice();
 
@@ -411,7 +400,6 @@ describe("CPace integration — X25519+SHA-512", () => {
 		const ADa = utf8("ADa");
 		const ADb = utf8("ADb");
 
-		// Сценарий 1: A=initiator, B=responder
 		const A1 = new CPaceSession({
 			prs,
 			suite: detSuite,
@@ -435,7 +423,6 @@ describe("CPace integration — X25519+SHA-512", () => {
 		await A1.receive(B1m);
 		const isk1 = A1.exportISK();
 
-		// Сценарий 2: меняем роли
 		const A2 = new CPaceSession({
 			prs,
 			suite: detSuite,
