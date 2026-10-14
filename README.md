@@ -1,9 +1,9 @@
 # cpace-ts — CPace in TypeScript
 
-[![CI](https://github.com/slava-nikulin/cpace-ts/actions/workflows/ci.yml/badge.svg)](…)
-[![npm version](https://img.shields.io/npm/v/cpace-ts.svg)](…)
-[![types](https://img.shields.io/badge/types-.d.ts-blue.svg)](#)
-[![license](https://img.shields.io/badge/license-MIT-green.svg)](#)
+[![CI](https://github.com/slava-nikulin/cpace-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/slava-nikulin/cpace-ts/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/cpace-ts.svg)](https://www.npmjs.com/package/cpace-ts)
+[![types](https://img.shields.io/badge/types-.d.ts-blue.svg)](https://www.npmjs.com/package/cpace-ts)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 TypeScript implementation of CPace, supporting the X25519/SHA-512 suite defined in draft-irtf-cfrg-cpace-21.
 
@@ -31,7 +31,7 @@ import {
 
 const EMPTY_AD = new Uint8Array(0);
 
-export function newSession(role: CPaceRole, prs: Uint8Array): CPaceSession {
+export function newSession(role: 'initiator' | 'responder', prs: Uint8Array): CPaceSession {
   const suite = {
     name: 'CPACE-X25519-SHA512',
     group: G_X25519,
@@ -67,7 +67,7 @@ export async function receive(
   };
 
   const out = await s.receive(inbound);
-  return out.payload;
+  return out?.payload ?? new Uint8Array(0);
 }
 
 export function exportISK(s: CPaceSession): Uint8Array {
@@ -75,7 +75,7 @@ export function exportISK(s: CPaceSession): Uint8Array {
 }
 
 async function runFullHandshake() {
-  const prs = new Uint8Array([...]); // Pre-shared secret
+  const prs = new TextEncoder().encode('example shared secret'); // Pre-shared secret
 
   // Setup both parties
   const initiator = newSession('initiator', prs);
